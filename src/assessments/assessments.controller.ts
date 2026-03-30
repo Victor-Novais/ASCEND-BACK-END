@@ -1,9 +1,19 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AssessmentsService } from './assessments.service';
+import { BulkAssessmentResponsesDto } from './dto/bulk-assessment-responses.dto';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 
 @Controller('assessments')
@@ -15,6 +25,15 @@ export class AssessmentsController {
   @Roles(Role.ADMIN, Role.AVALIADOR)
   create(@Body() createAssessmentDto: CreateAssessmentDto) {
     return this.assessmentsService.create(createAssessmentDto);
+  }
+
+  @Put(':id/responses')
+  @Roles(Role.ADMIN, Role.AVALIADOR)
+  upsertResponses(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: BulkAssessmentResponsesDto,
+  ) {
+    return this.assessmentsService.upsertResponses(id, dto);
   }
 
   @Get(':id')
