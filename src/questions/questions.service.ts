@@ -1,0 +1,146 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, Question, QuestionVersion, Role } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateQuestionDto } from './dto/create-question.dto';
+import { UpdateQuestionDto } from './dto/update-question.dto';
+
+type QuestionWithHistory = Question & {
+  createdBy: {
+    id: string;
+    name: string | null;
+    email: string;
+    role: Role;
+  };
+  versions: QuestionVersion[];
+};
+
+@Injectable()
+export class QuestionsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(createQuestionDto: CreateQuestionDto): Promise<QuestionWithHistory> {
+    const question = await this.prisma.question.create({
+      data: {
+        version: 1,
+        text: createQuestionDto.text,
+        category: createQuestionDto.category,
+        weight: createQuestionDto.weight,
+        responseType: createQuestionDto.responseType,
+        evidenceRequired: createQuestionDto.evidenceRequired,
+        hint: createQuestionDto.hint,
+        isActive: true,
+        createdById: createQuestionDto.createdById,
+      },
+    });
+
+    await this.prisma.questionVersion.create({
+      data: {
+        questionId: question.id,
+        version: question.version,
+        text: question.text,
+        weight: question.weight,
+        changedById: createQuestionDto.createdById,
+      },
+    });
+
+    return this.findOne(question.id);
+  }
+
+  async findAll(): Promise<QuestionWithHistory[]> {
+    return this.prisma.question.findMany({
+      where: { isActive: true },
+      include: this.defaultInclude,
+      orderBy: [{ category: 'asc' }, { updatedAt: 'desc' }],
+    });
+  }
+
+  async findOne(id: number): Promise<QuestionWithHistory> {
+    const question = await this.prisma.question.findUnique({
+      where: { id },
+      include: this.defaultInclude,
+    });
+
+    if (!question) {
+      throw new NotFoundException(`Question with id '${id}' not found`);
+    }
+
+    return question;
+  }
+
+  async createNewVersion(id: number, updateQuestionDto: UpdateQuestionDto): Promise<QuestionWithHistory> {
+    const existing = await this.prisma.question.findUnique({
+      where: { id },
+    });
+
+    if (!existing || !existing.isActive) {
+      throw new NotFoundException(`Active question with id '${id}' not found`);
+    }
+
+    const nextVersion = existing.version + 1;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Persist previous state to immutable history before bumping the live record version.
+      await tx.questionVersion.create({
+        data: {
+          questionId: existing.id,
+          version: existing.version,
+          text: existing.text,
+          weight: existing.weight,
+          changedById: updateQuestionDto.changedById,
+        },
+      });
+
+      await tx.question.update({
+        where: { id },
+        data: {
+          version: nextVersion,
+          text: updateQuestionDto.text ?? existing.text,
+          category: updateQuestionDto.category ?? existing.category,
+          weight: updateQuestionDto.weight ?? existing.weight,
+          responseType: updateQuestionDto.responseType ?? existing.responseType,
+          evidenceRequired: updateQuestionDto.evidenceRequired ?? existing.evidenceRequired,
+          hint: updateQuestionDto.hint ?? existing.hint,
+          isActive: true,
+        },
+      });
+    });
+
+    return this.findOne(id);
+  }
+
+  async softDelete(id: number): Promise<QuestionWithHistory> {
+    await this.ensureQuestionExists(id);
+
+    await this.prisma.question.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return this.findOne(id);
+  }
+
+  private async ensureQuestionExists(id: number): Promise<void> {
+    const exists = await this.prisma.question.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!exists) {
+      throw new NotFoundException(`Question with id '${id}' not found`);
+    }
+  }
+
+  private readonly defaultInclude: Prisma.QuestionInclude = {
+    createdBy: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    },
+    versions: {
+      orderBy: { version: 'desc' },
+    },
+  };
+}
