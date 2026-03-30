@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AssessmentsService } from './assessments.service';
@@ -22,35 +24,39 @@ export class AssessmentsController {
   constructor(private readonly assessmentsService: AssessmentsService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.AVALIADOR)
-  create(@Body() createAssessmentDto: CreateAssessmentDto) {
-    return this.assessmentsService.create(createAssessmentDto);
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  create(
+    @Body() createAssessmentDto: CreateAssessmentDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.assessmentsService.create(createAssessmentDto, user);
   }
 
   @Put(':id/responses')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   upsertResponses(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: BulkAssessmentResponsesDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.assessmentsService.upsertResponses(id, dto);
+    return this.assessmentsService.upsertResponses(id, dto, user);
   }
 
   @Post(':id/submit')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
-  submit(@Param('id', ParseIntPipe) id: number) {
-    return this.assessmentsService.submitAssessment(id);
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  submit(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.assessmentsService.submitAssessment(id, user);
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.assessmentsService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.assessmentsService.findOne(id, user);
   }
 
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findAll() {
-    return this.assessmentsService.findAll();
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.assessmentsService.findAll(user);
   }
 }

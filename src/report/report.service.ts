@@ -1,7 +1,7 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import {
   AssessmentStatus,
@@ -10,6 +10,8 @@ import {
   Report,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { assessmentWhereForUser, isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { ScoreService } from '../score/score.service';
 import { ScoreEngineItemInput } from '../score/score.types';
 import {
@@ -45,9 +47,16 @@ export class ReportService {
   }
 
 
-  async generateAndPersist(assessmentId: number): Promise<Report & { payload: ReportGenerationResult }> {
-    const assessment = await this.prisma.assessment.findUnique({
-      where: { id: assessmentId },
+  async generateAndPersist(
+    assessmentId: number,
+    currentUser: JwtPayload,
+  ): Promise<Report & { payload: ReportGenerationResult }> {
+    const assessment = await this.prisma.assessment.findFirst({
+      // Security: report generation is blocked unless assessment belongs to user scope.
+      where: assessmentWhereForUser(assessmentId, {
+        id: currentUser.sub,
+        role: currentUser.role,
+      }),
       include: {
         company: {
           select: {
@@ -82,7 +91,7 @@ export class ReportService {
     });
 
     if (!assessment) {
-      throw new NotFoundException(`Assessment with id '${assessmentId}' not found`);
+      throw new ForbiddenException('You do not have access to this assessment');
     }
 
     if (assessment.status !== AssessmentStatus.SUBMITTED) {
@@ -132,18 +141,35 @@ export class ReportService {
         },
       });
 
-      return tx.report.upsert({
-        where: { assessmentId },
-        create: {
+      const existingReport = await tx.report.findFirst({
+        where: isAdmin({ id: currentUser.sub, role: currentUser.role })
+          ? { assessmentId }
+          : {
+            assessmentId,
+            assessment: {
+              company: userCompanyScope(currentUser.sub),
+            },
+          },
+        select: { id: true },
+      });
+
+      if (existingReport) {
+        return tx.report.update({
+          where: { id: existingReport.id },
+          data: {
+            totalScore: totalDecimal,
+            maturityLevel,
+            categoryScores: categoryScoresJson as unknown as Prisma.InputJsonValue,
+            strengths: strengths as unknown as Prisma.InputJsonValue,
+            weaknesses: weaknesses as unknown as Prisma.InputJsonValue,
+            recommendations: recommendations as unknown as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      return tx.report.create({
+        data: {
           assessmentId,
-          totalScore: totalDecimal,
-          maturityLevel,
-          categoryScores: categoryScoresJson as unknown as Prisma.InputJsonValue,
-          strengths: strengths as unknown as Prisma.InputJsonValue,
-          weaknesses: weaknesses as unknown as Prisma.InputJsonValue,
-          recommendations: recommendations as unknown as Prisma.InputJsonValue,
-        },
-        update: {
           totalScore: totalDecimal,
           maturityLevel,
           categoryScores: categoryScoresJson as unknown as Prisma.InputJsonValue,
@@ -156,7 +182,6 @@ export class ReportService {
 
     return { ...persisted, payload };
   }
-
 
   private buildScoreItems(
     responses: Array<{

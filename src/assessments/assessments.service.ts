@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   Assessment,
   AssessmentStatus,
@@ -6,6 +11,13 @@ import {
   Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import {
+  assessmentResponseWhereForUser,
+  assessmentWhereForUser,
+  isAdmin,
+  userCompanyScope,
+} from '../auth/user-scope.helper';
 import { BulkAssessmentResponsesDto } from './dto/bulk-assessment-responses.dto';
 import { AssessmentResponseItemDto } from './dto/assessment-response-item.dto';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
@@ -59,8 +71,11 @@ export class AssessmentsService {
     private readonly reportService: ReportService,
   ) {}
 
-  async create(createAssessmentDto: CreateAssessmentDto): Promise<AssessmentWithRelations> {
-    await this.ensureCompanyExists(createAssessmentDto.companyId);
+  async create(
+    createAssessmentDto: CreateAssessmentDto,
+    currentUser: JwtPayload,
+  ): Promise<AssessmentWithRelations> {
+    await this.ensureCompanyAccess(createAssessmentDto.companyId, currentUser);
     await this.ensureAssessorIsEvaluator(createAssessmentDto.assessorId);
 
     const assessment = await this.prisma.assessment.create({
@@ -73,24 +88,28 @@ export class AssessmentsService {
       },
     });
 
-    return this.findOne(assessment.id);
+    return this.findOne(assessment.id, currentUser);
   }
 
-  async findAll(): Promise<AssessmentWithRelations[]> {
+  async findAll(currentUser: JwtPayload): Promise<AssessmentWithRelations[]> {
     return this.prisma.assessment.findMany({
+      where: isAdmin({ id: currentUser.sub, role: currentUser.role })
+        ? undefined
+        : { company: userCompanyScope(currentUser.sub) },
       include: this.defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: number): Promise<AssessmentWithRelations> {
-    const assessment = await this.prisma.assessment.findUnique({
-      where: { id },
+  async findOne(id: number, currentUser: JwtPayload): Promise<AssessmentWithRelations> {
+    const assessment = await this.prisma.assessment.findFirst({
+      // Security: assessment access is constrained by the parent company assignment.
+      where: assessmentWhereForUser(id, { id: currentUser.sub, role: currentUser.role }),
       include: this.defaultInclude,
     });
 
     if (!assessment) {
-      throw new NotFoundException(`Assessment with id '${id}' not found`);
+      throw new ForbiddenException('You do not have access to this assessment');
     }
 
     return assessment;
@@ -99,14 +118,18 @@ export class AssessmentsService {
   async upsertResponses(
     assessmentId: number,
     dto: BulkAssessmentResponsesDto,
+    currentUser: JwtPayload,
   ): Promise<AssessmentWithRelations> {
-    const assessment = await this.prisma.assessment.findUnique({
-      where: { id: assessmentId },
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhereForUser(assessmentId, {
+        id: currentUser.sub,
+        role: currentUser.role,
+      }),
       select: { id: true, status: true, startedAt: true },
     });
 
     if (!assessment) {
-      throw new NotFoundException(`Assessment with id '${assessmentId}' not found`);
+      throw new ForbiddenException('You do not have access to this assessment');
     }
 
     if (assessment.status === AssessmentStatus.SUBMITTED) {
@@ -164,10 +187,12 @@ export class AssessmentsService {
         const scoreDecimal = new Prisma.Decimal(score);
 
         const existing = await tx.assessmentResponse.findFirst({
-          where: {
+          // Security: response writes are guarded through assessment->company ownership.
+          where: assessmentResponseWhereForUser(
             assessmentId,
-            questionId: item.questionId,
-          },
+            item.questionId,
+            { id: currentUser.sub, role: currentUser.role },
+          ),
           orderBy: { id: 'desc' },
         });
 
@@ -222,12 +247,12 @@ export class AssessmentsService {
       }
     });
 
-    return this.findOne(assessmentId);
+    return this.findOne(assessmentId, currentUser);
   }
 
-  async submitAssessment(id: number) {
-    const assessment = await this.prisma.assessment.findUnique({
-      where: { id },
+  async submitAssessment(id: number, currentUser: JwtPayload) {
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhereForUser(id, { id: currentUser.sub, role: currentUser.role }),
       include: {
         report: true,
         responses: { select: { id: true } },
@@ -235,7 +260,7 @@ export class AssessmentsService {
     });
 
     if (!assessment) {
-      throw new NotFoundException(`Assessment with id '${id}' not found`);
+      throw new ForbiddenException('You do not have access to this assessment');
     }
 
     if (assessment.responses.length === 0) {
@@ -263,7 +288,7 @@ export class AssessmentsService {
       };
     }
 
-    return this.reportService.generateAndPersist(id);
+    return this.reportService.generateAndPersist(id, currentUser);
   }
 
   private assertEvidenceSatisfied(
@@ -306,14 +331,22 @@ export class AssessmentsService {
     });
   }
 
-  private async ensureCompanyExists(companyId: number): Promise<void> {
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
+  private async ensureCompanyAccess(
+    companyId: number,
+    currentUser: JwtPayload,
+  ): Promise<void> {
+    const company = await this.prisma.company.findFirst({
+      where: isAdmin({ id: currentUser.sub, role: currentUser.role })
+        ? { id: companyId }
+        : {
+          id: companyId,
+          ...userCompanyScope(currentUser.sub),
+        },
       select: { id: true },
     });
 
     if (!company) {
-      throw new NotFoundException(`Company with id '${companyId}' not found`);
+      throw new ForbiddenException('You do not have access to this company');
     }
   }
 
