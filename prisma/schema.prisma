@@ -64,6 +64,7 @@ model User {
 
   assignments UserCompanyAssignment[]
   questionsCreated Question[] @relation("QuestionCreator")
+  questionVersionsChanged QuestionVersion[]
 }
 
 
@@ -158,6 +159,7 @@ model Assessment {
 
   responses AssessmentResponse[]
   report    Report?
+  history   AssessmentHistory[]
 }
 
 
