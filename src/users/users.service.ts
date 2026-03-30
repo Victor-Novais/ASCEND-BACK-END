@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, User } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -11,11 +12,14 @@ export class UsersService {
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     try {
+      const passwordHash = await bcrypt.hash(createUserDto.password, 12);
+
       return await this.prisma.user.create({
         data: {
           id: createUserDto.id ?? randomUUID(),
           name: createUserDto.name,
           email: createUserDto.email,
+          passwordHash,
           role: createUserDto.role,
         },
       });
@@ -44,11 +48,16 @@ export class UsersService {
     await this.ensureUserExists(id);
 
     try {
+      const passwordHash = updateUserDto.password
+        ? await bcrypt.hash(updateUserDto.password, 12)
+        : undefined;
+
       return await this.prisma.user.update({
         where: { id },
         data: {
           name: updateUserDto.name,
           email: updateUserDto.email,
+          passwordHash,
           role: updateUserDto.role,
         },
       });

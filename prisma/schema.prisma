@@ -55,6 +55,7 @@ model User {
   id        String   @id @db.Uuid
   name      String?
   email     String   @unique
+  passwordHash String
   role      Role
   createdAt DateTime @default(now())
 
