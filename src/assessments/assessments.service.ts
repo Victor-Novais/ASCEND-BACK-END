@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BulkAssessmentResponsesDto } from './dto/bulk-assessment-responses.dto';
 import { AssessmentResponseItemDto } from './dto/assessment-response-item.dto';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
+import { ReportService } from '../report/report.service';
 import { computeResponseScore } from './utils/response-scoring';
 
 type AssessmentWithRelations = Assessment & {
@@ -54,7 +55,10 @@ type AssessmentWithRelations = Assessment & {
 
 @Injectable()
 export class AssessmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reportService: ReportService,
+  ) {}
 
   async create(createAssessmentDto: CreateAssessmentDto): Promise<AssessmentWithRelations> {
     await this.ensureCompanyExists(createAssessmentDto.companyId);
@@ -220,6 +224,47 @@ export class AssessmentsService {
     });
 
     return this.findOne(assessmentId);
+  }
+
+  async submitAssessment(id: number) {
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id },
+      include: {
+        report: true,
+        responses: { select: { id: true } },
+      },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException(`Assessment with id '${id}' not found`);
+    }
+
+    if (assessment.responses.length === 0) {
+      throw new BadRequestException(
+        'Cannot submit an assessment without responses',
+      );
+    }
+
+    const wasSubmitted = assessment.status === AssessmentStatus.SUBMITTED;
+
+    if (!wasSubmitted) {
+      await this.prisma.assessment.update({
+        where: { id },
+        data: {
+          status: AssessmentStatus.SUBMITTED,
+          completedAt: new Date(),
+        },
+      });
+    }
+
+    if (wasSubmitted && assessment.report) {
+      return {
+        ...assessment.report,
+        payload: this.reportService.payloadFromPersisted(assessment.report),
+      };
+    }
+
+    return this.reportService.generateAndPersist(id);
   }
 
   private assertEvidenceSatisfied(

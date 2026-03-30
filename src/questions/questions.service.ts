@@ -16,7 +16,7 @@ type QuestionWithHistory = Question & {
 
 @Injectable()
 export class QuestionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async create(createQuestionDto: CreateQuestionDto): Promise<QuestionWithHistory> {
     const question = await this.prisma.question.create({
@@ -79,7 +79,7 @@ export class QuestionsService {
     const nextVersion = existing.version + 1;
 
     await this.prisma.$transaction(async (tx) => {
-      // Persist previous state to immutable history before bumping the live record version.
+
       await tx.questionVersion.create({
         data: {
           questionId: existing.id,

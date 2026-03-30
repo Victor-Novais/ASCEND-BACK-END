@@ -11,11 +11,7 @@ const ROUND_DIGITS = 2;
 
 @Injectable()
 export class ScoreService {
-  /**
-   * Normalizes a single response to 0–100:
-   * - YES_NO: YES → 100, NO → 0
-   * - SCALE: integer 0–10 → value × 10 (0–100)
-   */
+
   normalizeResponse(responseType: ResponseType, responseValue: string): number {
     const trimmed = responseValue.trim();
 
@@ -45,10 +41,7 @@ export class ScoreService {
     throw new BadRequestException(`Unsupported response type: ${responseType}`);
   }
 
-  /**
-   * Weighted mean: Σ(score_i × w_i) / Σ(w_i).
-   * Category scores use the same rule within each category.
-   */
+
   compute(input: ScoreEngineInput): ScoreEngineResult {
     if (!input.items?.length) {
       throw new BadRequestException('At least one response item is required');

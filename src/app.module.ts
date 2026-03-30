@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { CompaniesModule } from './companies/companies.module';
 import { QuestionsModule } from './questions/questions.module';
 import { AssessmentsModule } from './assessments/assessments.module';
+import { ReportModule } from './report/report.module';
 import { ScoreModule } from './score/score.module';
 
 @Module({
@@ -15,6 +16,7 @@ import { ScoreModule } from './score/score.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     ScoreModule,
+    ReportModule,
     UsersModule,
     AuthModule,
     CompaniesModule,

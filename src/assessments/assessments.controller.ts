@@ -36,6 +36,12 @@ export class AssessmentsController {
     return this.assessmentsService.upsertResponses(id, dto);
   }
 
+  @Post(':id/submit')
+  @Roles(Role.ADMIN, Role.AVALIADOR)
+  submit(@Param('id', ParseIntPipe) id: number) {
+    return this.assessmentsService.submitAssessment(id);
+  }
+
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   findOne(@Param('id', ParseIntPipe) id: number) {
