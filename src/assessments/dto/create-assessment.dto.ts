@@ -5,8 +5,9 @@ export class CreateAssessmentDto {
   @IsInt()
   companyId!: number;
 
+  @IsOptional()
   @IsUUID('4')
-  assessorId!: string;
+  assessorId?: string;
 
   @IsOptional()
   @IsEnum(AssessmentStatus)

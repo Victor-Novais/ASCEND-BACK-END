@@ -21,6 +21,7 @@ import {
 import { BulkAssessmentResponsesDto } from './dto/bulk-assessment-responses.dto';
 import { AssessmentResponseItemDto } from './dto/assessment-response-item.dto';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
+import { AssessmentCalculatorService } from './assessment-calculator.service';
 import { ReportService } from '../report/report.service';
 import { computeResponseScore } from './utils/response-scoring';
 
@@ -69,6 +70,7 @@ export class AssessmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reportService: ReportService,
+    private readonly assessmentCalculator: AssessmentCalculatorService,
   ) {}
 
   async create(
@@ -76,16 +78,23 @@ export class AssessmentsService {
     currentUser: JwtPayload,
   ): Promise<AssessmentWithRelations> {
     await this.ensureCompanyAccess(createAssessmentDto.companyId, currentUser);
-    await this.ensureAssessorIsEvaluator(createAssessmentDto.assessorId);
+    const assessorId = createAssessmentDto.assessorId ?? currentUser.sub;
+    await this.ensureAssessorExists(assessorId);
 
     const assessment = await this.prisma.assessment.create({
       data: {
         companyId: createAssessmentDto.companyId,
-        assessorId: createAssessmentDto.assessorId,
+        assessorId,
         status: createAssessmentDto.status,
         startedAt: createAssessmentDto.startedAt ? new Date(createAssessmentDto.startedAt) : undefined,
         completedAt: createAssessmentDto.completedAt ? new Date(createAssessmentDto.completedAt) : undefined,
       },
+    });
+
+    // Keep assessment and report state synchronized from the start.
+    await this.assessmentCalculator.recalculate(assessment.id, {
+      sub: currentUser.sub,
+      role: currentUser.role,
     });
 
     return this.findOne(assessment.id, currentUser);
@@ -247,6 +256,12 @@ export class AssessmentsService {
       }
     });
 
+    // Security and business rule: scoring is fully automated and recalculated on every change.
+    await this.assessmentCalculator.recalculate(assessmentId, {
+      sub: currentUser.sub,
+      role: currentUser.role,
+    });
+
     return this.findOne(assessmentId, currentUser);
   }
 
@@ -281,14 +296,26 @@ export class AssessmentsService {
       });
     }
 
+    const payload = await this.assessmentCalculator.recalculate(id, {
+      sub: currentUser.sub,
+      role: currentUser.role,
+    });
+    const report = await this.prisma.report.findUnique({ where: { assessmentId: id } });
+    if (!report) {
+      throw new ForbiddenException('Unable to load generated report for this assessment');
+    }
+
     if (wasSubmitted && assessment.report) {
       return {
-        ...assessment.report,
-        payload: this.reportService.payloadFromPersisted(assessment.report),
+        ...report,
+        payload: this.reportService.payloadFromPersisted(report),
       };
     }
 
-    return this.reportService.generateAndPersist(id, currentUser);
+    return {
+      ...report,
+      payload,
+    };
   }
 
   private assertEvidenceSatisfied(
@@ -350,18 +377,14 @@ export class AssessmentsService {
     }
   }
 
-  private async ensureAssessorIsEvaluator(assessorId: string): Promise<void> {
+  private async ensureAssessorExists(assessorId: string): Promise<void> {
     const assessor = await this.prisma.user.findUnique({
       where: { id: assessorId },
-      select: { id: true, role: true },
+      select: { id: true },
     });
 
     if (!assessor) {
       throw new NotFoundException(`User with id '${assessorId}' not found`);
-    }
-
-    if (assessor.role !== Role.AVALIADOR) {
-      throw new BadRequestException('assessorId must reference a user with role AVALIADOR');
     }
   }
 

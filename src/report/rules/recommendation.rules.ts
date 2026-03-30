@@ -6,10 +6,6 @@ import {
 } from '../report.types';
 import { ScoreEngineResult } from '../../score/score.types';
 
-const STRENGTH_THRESHOLD = 75;
-const WEAKNESS_THRESHOLD = 50;
-const CRITICAL_THRESHOLD = 40;
-
 const CATEGORY_LABEL: Record<QuestionCategory, string> = {
   [QuestionCategory.GOVERNANCA]: 'Governance',
   [QuestionCategory.SEGURANCA]: 'Security',
@@ -18,42 +14,51 @@ const CATEGORY_LABEL: Record<QuestionCategory, string> = {
   [QuestionCategory.CULTURA]: 'Culture',
 };
 
+const CATEGORY_RECOMMENDATION: Record<QuestionCategory, string> = {
+  [QuestionCategory.GOVERNANCA]:
+    'Define clear governance ownership and decision-making rituals.',
+  [QuestionCategory.SEGURANCA]:
+    'Improve access control and authentication policies.',
+  [QuestionCategory.PROCESSOS]:
+    'Document and standardize operational processes.',
+  [QuestionCategory.INFRAESTRUTURA]:
+    'Modernize infrastructure baselines and observability routines.',
+  [QuestionCategory.CULTURA]:
+    'Strengthen continuous improvement and team enablement practices.',
+};
+
 export function buildStrengthsAndWeaknesses(score: ScoreEngineResult): {
   strengths: ReportStrengthItem[];
   weaknesses: ReportWeaknessItem[];
 } {
-  const strengths: ReportStrengthItem[] = [];
-  const weaknesses: ReportWeaknessItem[] = [];
+  const ranked = (Object.values(QuestionCategory) as QuestionCategory[])
+    .filter((key) => score.categoryWeights[key] > 0)
+    .map((key) => ({ category: key, score: score.categoryScores[key] }))
+    .sort((a, b) => b.score - a.score);
 
-  for (const key of Object.values(QuestionCategory) as QuestionCategory[]) {
-    if (score.categoryWeights[key] <= 0) {
-      continue;
-    }
+  const strengths = ranked.slice(0, 2).map((row) => ({
+    category: row.category,
+    score: row.score,
+    title: `Strong performance: ${CATEGORY_LABEL[row.category]}`,
+    summary: `This is one of the highest maturity categories (${row.score}).`,
+  }));
 
-    const s = score.categoryScores[key];
-    if (s >= STRENGTH_THRESHOLD) {
-      strengths.push({
-        category: key,
-        score: s,
-        title: `Strong performance: ${CATEGORY_LABEL[key]}`,
-        summary: `Score ${s} in ${CATEGORY_LABEL[key]} indicates practices are well aligned with expectations.`,
-      });
-    } else if (s < WEAKNESS_THRESHOLD) {
-      weaknesses.push({
-        category: key,
-        score: s,
-        title: `Improvement area: ${CATEGORY_LABEL[key]}`,
-        summary: `Score ${s} in ${CATEGORY_LABEL[key]} suggests gaps that should be prioritized in the action plan.`,
-      });
-    }
-  }
+  const weaknesses = [...ranked]
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 2)
+    .map((row) => ({
+      category: row.category,
+      score: row.score,
+      title: `Improvement area: ${CATEGORY_LABEL[row.category]}`,
+      summary: `This is one of the lowest maturity categories (${row.score}).`,
+    }));
 
   return { strengths, weaknesses };
 }
 
 export function buildRecommendations(
   score: ScoreEngineResult,
-  weaknessCount: number,
+  _weaknessCount: number,
 ): ReportRecommendationItem[] {
   const items: ReportRecommendationItem[] = [];
   const categories = Object.values(QuestionCategory) as QuestionCategory[];
@@ -63,56 +68,26 @@ export function buildRecommendations(
       continue;
     }
     const s = score.categoryScores[cat];
-    if (s < CRITICAL_THRESHOLD) {
-      items.push({
-        id: `rec-critical-${cat.toLowerCase()}`,
-        priority: 'high',
-        category: cat,
-        title: `Stabilize ${CATEGORY_LABEL[cat]}`,
-        action: `Run a focused remediation sprint on ${CATEGORY_LABEL[cat]} controls and evidence.`,
-        rationale: `Category score ${s} is below ${CRITICAL_THRESHOLD}, increasing operational and compliance risk.`,
-      });
-    } else if (s < WEAKNESS_THRESHOLD) {
+    if (s < 50) {
       items.push({
         id: `rec-improve-${cat.toLowerCase()}`,
         priority: 'medium',
         category: cat,
         title: `Elevate ${CATEGORY_LABEL[cat]}`,
-        action: `Define measurable targets and quarterly checkpoints for ${CATEGORY_LABEL[cat]}.`,
-        rationale: `Score ${s} indicates meaningful upside before reaching peer benchmarks.`,
+        action: CATEGORY_RECOMMENDATION[cat],
+        rationale: `Category score ${s} is below 50 and needs focused remediation.`,
       });
     }
   }
 
-  if (score.totalScore < 55) {
-    items.push({
-      id: 'rec-global-foundation',
-      priority: 'high',
-      category: 'GLOBAL',
-      title: 'Establish a cross-domain improvement backlog',
-      action:
-        'Prioritize the lowest-scoring categories first; sequence work to avoid conflicting initiatives.',
-      rationale: `Overall maturity score ${score.totalScore} suggests foundational work is needed before advanced optimization.`,
-    });
-  } else if (score.totalScore >= 80 && weaknessCount === 0) {
+  if (items.length === 0) {
     items.push({
       id: 'rec-global-sustain',
       priority: 'low',
       category: 'GLOBAL',
-      title: 'Sustain and benchmark',
-      action:
-        'Institutionalize periodic reassessments and external benchmarking to prevent regression.',
-      rationale: `Overall score ${score.totalScore} is strong; focus shifts to consistency and external validation.`,
-    });
-  } else if (score.totalScore < 70) {
-    items.push({
-      id: 'rec-global-governance-review',
-      priority: 'medium',
-      category: 'GLOBAL',
-      title: 'Review executive ownership',
-      action:
-        'Assign accountable owners per weak category and tie milestones to leadership reviews.',
-      rationale: `Mid-range overall score ${score.totalScore} benefits from clearer accountability.`,
+      title: 'Maintain current maturity gains',
+      action: 'Keep reassessing periodically and preserve effective practices.',
+      rationale: `All active categories are at or above the baseline threshold.`,
     });
   }
 
