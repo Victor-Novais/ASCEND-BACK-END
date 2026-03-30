@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+
+enum Role {
+  ADMIN
+  AVALIADOR
+  CLIENTE
+}
+
+enum CompanySize {
+  MICRO
+  PEQUENA
+  MEDIA
+  GRANDE
+}
+
+enum QuestionCategory {
+  GOVERNANCA
+  SEGURANCA
+  PROCESSOS
+  INFRAESTRUTURA
+  CULTURA
+}
+
+enum ResponseType {
+  YES_NO
+  SCALE
+}
+
+enum AssessmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  SUBMITTED
+}
+
+enum MaturityLevel {
+  ARTESANAL
+  EFICIENTE
+  EFICAZ
+  ESTRATEGICO
+}
+
+
+
+model User {
+  id        String   @id @db.Uuid
+  name      String?
+  email     String   @unique
+  role      Role
+  createdAt DateTime @default(now())
+
+  companiesCreated Company[] @relation("CompanyCreator")
+  assessments      Assessment[] @relation("Assessor")
+
+  assignments UserCompanyAssignment[]
+  questionsCreated Question[] @relation("QuestionCreator")
+}
+
+
+
+model Company {
+  id                 Int          @id @default(autoincrement())
+  name               String
+  segment            String
+  size               CompanySize?
+  responsible        String
+  responsibleEmail   String
+  responsiblePhone   String?
+  cnpj               String?
+  address            String?
+  createdAt          DateTime     @default(now())
+
+  createdById String?
+  createdBy   User? @relation("CompanyCreator", fields: [createdById], references: [id])
+
+  assessments Assessment[]
+  assignments UserCompanyAssignment[]
+  history     AssessmentHistory[]
+}
+
+
+
+model UserCompanyAssignment {
+  id        Int      @id @default(autoincrement())
+  userId    String   @db.Uuid
+  companyId Int
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([userId, companyId])
+}
+
+
+
+model Question {
+  id               Int               @id @default(autoincrement())
+  version          Int
+  text             String
+  category         QuestionCategory
+  weight           Decimal           @db.Decimal(3, 2)
+  responseType     ResponseType
+  evidenceRequired Boolean
+  hint             String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  createdById String
+  createdBy   User @relation("QuestionCreator", fields: [createdById], references: [id])
+
+  responses AssessmentResponse[]
+  versions  QuestionVersion[]
+}
+
+
+
+model QuestionVersion {
+  id         Int      @id @default(autoincrement())
+  questionId Int
+  version    Int
+  text       String
+  weight     Decimal  @db.Decimal(3, 2)
+  changedAt  DateTime @default(now())
+
+  changedById String
+  changedBy   User @relation(fields: [changedById], references: [id])
+
+  question Question @relation(fields: [questionId], references: [id])
+}
+
+
+model Assessment {
+  id            Int              @id @default(autoincrement())
+  companyId     Int
+  assessorId    String           @db.Uuid
+  status        AssessmentStatus @default(NOT_STARTED)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  totalScore    Decimal?         @db.Decimal(5, 2)
+  maturityLevel MaturityLevel?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  company  Company @relation(fields: [companyId], references: [id])
+  assessor User    @relation("Assessor", fields: [assessorId], references: [id])
+
+  responses AssessmentResponse[]
+  report    Report?
+}
+
+
+model AssessmentResponse {
+  id                Int      @id @default(autoincrement())
+  assessmentId      Int
+  questionId        Int
+  questionVersion   Int
+  responseValue     String
+  score             Decimal  @db.Decimal(5, 2)
+  evidence          String?
+  evidenceFileUrl   String?
+  observation       String?
+  answeredAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id])
+
+  evidenceFiles EvidenceFile[]
+}
+
+
+
+model EvidenceFile {
+  id         Int      @id @default(autoincrement())
+  responseId Int
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  mimeType   String
+  uploadedAt DateTime @default(now())
+
+  response AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+}
+
+
+
+model Report {
+  id               Int      @id @default(autoincrement())
+  assessmentId     Int      @unique
+  totalScore       Decimal  @db.Decimal(5, 2)
+  maturityLevel    MaturityLevel
+  categoryScores   Json
+  strengths        Json
+  weaknesses       Json
+  recommendations  Json
+  generatedAt      DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
+
+model AssessmentHistory {
+  id             Int      @id @default(autoincrement())
+  companyId      Int
+  assessmentId   Int
+  totalScore     Decimal  @db.Decimal(5, 2)
+  maturityLevel  MaturityLevel
+  categoryScores Json
+  assessedAt     DateTime @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id])
+  assessment Assessment @relation(fields: [assessmentId], references: [id])
+}
