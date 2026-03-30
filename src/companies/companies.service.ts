@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Company, Prisma, Role } from '@prisma/client';
+import { Assessment, Company, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
@@ -23,6 +23,10 @@ type CompanyWithRelations = Company & {
       role: Role;
     };
   }>;
+  assessments: Assessment[];
+  _count: {
+    assessments: number;
+  };
 };
 
 @Injectable()
@@ -150,7 +154,7 @@ export class CompaniesService {
     }
   }
 
-  private readonly defaultInclude: Prisma.CompanyInclude = {
+  private readonly defaultInclude = {
     createdBy: {
       select: {
         id: true,
@@ -172,5 +176,9 @@ export class CompaniesService {
       },
       orderBy: { createdAt: 'asc' },
     },
-  };
+    assessments: true,
+    _count: {
+      select: { assessments: true },
+    },
+  } satisfies Prisma.CompanyInclude;
 }

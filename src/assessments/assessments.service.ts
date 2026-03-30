@@ -3,7 +3,6 @@ import {
   Assessment,
   AssessmentStatus,
   Prisma,
-  PrismaClient,
   Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -288,7 +287,7 @@ export class AssessmentsService {
   }
 
   private async createEvidenceFiles(
-    tx: PrismaClient,
+    tx: Prisma.TransactionClient,
     responseId: number,
     item: AssessmentResponseItemDto,
   ): Promise<void> {
@@ -333,7 +332,7 @@ export class AssessmentsService {
     }
   }
 
-  private readonly defaultInclude: Prisma.AssessmentInclude = {
+  private readonly defaultInclude = {
     company: {
       select: {
         id: true,
@@ -363,5 +362,5 @@ export class AssessmentsService {
       },
       orderBy: { createdAt: 'asc' },
     },
-  };
+  } satisfies Prisma.AssessmentInclude;
 }
