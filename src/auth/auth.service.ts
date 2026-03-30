@@ -1,9 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 
 interface AuthUser {
@@ -31,6 +38,75 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload);
 
     return { accessToken };
+  }
+
+  async register(registerDto: RegisterDto): Promise<{
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: Role;
+      createdAt: Date;
+    };
+    accessToken: string;
+  }> {
+    const desiredRole = registerDto.role ?? Role.CLIENTE;
+
+    if (desiredRole === Role.ADMIN) {
+      throw new BadRequestException('Registration as ADMIN is not allowed');
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: registerDto.email },
+      select: { id: true },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('A user with this email already exists');
+    }
+
+    const passwordHash = await this.hashPassword(registerDto.password);
+
+    const createdUser = await this.prisma.user.create({
+      data: {
+        id: randomUUID(),
+        name: registerDto.name,
+        email: registerDto.email,
+        passwordHash,
+        role: desiredRole,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!createdUser.name) {
+      // Garantia defensiva: `RegisterDto.name` é obrigatório.
+      throw new BadRequestException('Invalid user name');
+    }
+
+    const payload: JwtPayload = {
+      sub: createdUser.id,
+      email: createdUser.email,
+      role: createdUser.role,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload);
+
+    return {
+      user: {
+        id: createdUser.id,
+        name: createdUser.name,
+        email: createdUser.email,
+        role: createdUser.role,
+        createdAt: createdUser.createdAt,
+      },
+      accessToken,
+    };
   }
 
   async hashPassword(plainPassword: string): Promise<string> {

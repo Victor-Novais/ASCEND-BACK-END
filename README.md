@@ -1,98 +1,1211 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# ASCEND Back-End API - Guia Completo de Testes com Insomnia
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Descricao do projeto
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Backend desenvolvido com **NestJS (Node.js + TypeScript)**, usando **Prisma ORM** e banco PostgreSQL (Supabase), com autenticacao JWT e controle de acesso por perfis (`ADMIN`, `AVALIADOR`, `CLIENTE`).
 
-## Description
+Este README foi feito para permitir que qualquer dev teste **todas as rotas reais da API** via Insomnia.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Pre-requisitos
 
-## Project setup
+- Node.js 20+ (recomendado)
+- npm
+- Banco PostgreSQL configurado
+- Variaveis de ambiente configuradas (ex.: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `PORT`)
+- Insomnia instalado
+
+## Configuracao inicial
+
+### 1) Instalar dependencias
 
 ```bash
-$ npm install
+npm install
 ```
 
-## Compile and run the project
+### 2) Rodar a API
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+# desenvolvimento
+npm run start:dev
 ```
 
-## Run tests
+### 3) Porta e baseURL
 
-```bash
-# unit tests
-$ npm run test
+- A API sobe em `process.env.PORT` ou `3000` por padrao.
+- Base URL local padrao:
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```text
+http://localhost:3000
 ```
 
-## Deployment
+## Variaveis no Insomnia
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Crie um Environment no Insomnia com:
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+```json
+{
+  "baseURL": "http://localhost:3000",
+  "token": ""
+}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Depois do login, cole o JWT em `token`.
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## Testando com Insomnia
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Autenticacao (JWT)
 
-## Support
+### Fluxo de autenticacao
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+1. Chame `POST /auth/login` com email e senha.
+2. Copie o `accessToken` retornado.
+3. Salve no environment do Insomnia (`token`).
+4. Nas rotas protegidas, envie:
 
-## Stay in touch
+```text
+Authorization: Bearer {{token}}
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Como copiar o token no Insomnia
 
-## License
+1. Envie a requisicao de login.
+2. Na resposta JSON, copie o valor de `accessToken`.
+3. Abra `Manage Environments`.
+4. Cole em `"token": "SEU_TOKEN_AQUI"`.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+
+## Modulo App
+
+### Health / Home
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/`
+- Autenticacao: `Nao`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL `{{baseURL}}/`
+4. Adicionar header `Content-Type`
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+"Hello World!"
+```
+
+---
+
+## Modulo Auth
+
+### Login
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/auth/login`
+- Autenticacao: `Nao`
+
+#### Body (se houver):
+
+```json
+{
+  "email": "admin@ascend.com",
+  "password": "SenhaForte123"
+}
+```
+
+#### Headers:
+
+```text
+Content-Type: application/json
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `POST`
+3. Inserir URL `{{baseURL}}/auth/login`
+4. Adicionar header `Content-Type: application/json`
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200` (ou `201`, conforme configuracao global)
+- Exemplo de resposta:
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR..."
+}
+```
+
+### Registro
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/auth/register`
+- Autenticacao: `Nao`
+
+Body:
+```json
+{
+  "name": "João Silva",
+  "email": "joao@ascend.com",
+  "password": "123456"
+}
+```
+
+Resposta esperada:
+Status: `201`
+```json
+{
+  "user": {
+    "id": "...",
+    "name": "João Silva",
+    "email": "joao@ascend.com",
+    "role": "CLIENTE",
+    "createdAt": "..."
+  },
+  "accessToken": "jwt..."
+}
+```
+
+### Perfil do usuario autenticado
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/auth/me`
+- Autenticacao: `Sim (Bearer Token)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL `{{baseURL}}/auth/me`
+4. Adicionar headers `Content-Type` e `Authorization`
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": "1b2c3d4e-1111-2222-3333-444455556666",
+  "email": "admin@ascend.com",
+  "role": "ADMIN"
+}
+```
+
+---
+
+## Modulo Users
+
+### Criar usuario
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/users`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+```json
+{
+  "name": "Maria Silva",
+  "email": "maria@ascend.com",
+  "password": "SenhaForte123",
+  "role": "AVALIADOR"
+}
+```
+
+`id` tambem pode ser enviado (UUID v4) de forma opcional.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `POST`
+3. Inserir URL `{{baseURL}}/users`
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `201`
+- Exemplo de resposta:
+
+```json
+{
+  "id": "1b2c3d4e-1111-2222-3333-444455556666",
+  "name": "Maria Silva",
+  "email": "maria@ascend.com",
+  "role": "AVALIADOR",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Listar usuarios
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/users`
+- Autenticacao: `Sim (Bearer Token - role ADMIN ou AVALIADOR)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL `{{baseURL}}/users`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+[
+  {
+    "id": "1b2c3d4e-1111-2222-3333-444455556666",
+    "name": "Maria Silva",
+    "email": "maria@ascend.com",
+    "role": "AVALIADOR",
+    "createdAt": "2026-03-30T12:00:00.000Z"
+  }
+]
+```
+
+### Buscar usuario por ID
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/users/:id`
+- Autenticacao: `Sim (Bearer Token)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL com UUID v4, ex. `{{baseURL}}/users/1b2c3d4e-1111-2222-3333-444455556666`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": "1b2c3d4e-1111-2222-3333-444455556666",
+  "name": "Maria Silva",
+  "email": "maria@ascend.com",
+  "role": "AVALIADOR",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Atualizar usuario
+
+- Metodo: `PATCH`
+- URL: `{{baseURL}}/users/:id`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+```json
+{
+  "name": "Maria Souza",
+  "password": "NovaSenhaSegura123",
+  "role": "CLIENTE"
+}
+```
+
+Todos os campos sao opcionais em atualizacao.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `PATCH`
+3. Inserir URL com UUID v4
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": "1b2c3d4e-1111-2222-3333-444455556666",
+  "name": "Maria Souza",
+  "email": "maria@ascend.com",
+  "role": "CLIENTE",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Remover usuario
+
+- Metodo: `DELETE`
+- URL: `{{baseURL}}/users/:id`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `DELETE`
+3. Inserir URL com UUID v4
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": "1b2c3d4e-1111-2222-3333-444455556666",
+  "name": "Maria Souza",
+  "email": "maria@ascend.com",
+  "role": "CLIENTE",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+---
+
+## Modulo Companies
+
+### Criar empresa
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/companies`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+```json
+{
+  "name": "Empresa XPTO",
+  "segment": "Tecnologia",
+  "size": "MEDIA",
+  "responsible": "Carlos Lima",
+  "responsibleEmail": "carlos@xpto.com",
+  "responsiblePhone": "+55 11 99999-0000",
+  "cnpj": "12.345.678/0001-90",
+  "address": "Sao Paulo - SP",
+  "createdById": "1b2c3d4e-1111-2222-3333-444455556666",
+  "evaluatorIds": [
+    "2c3d4e5f-1111-2222-3333-444455556666"
+  ]
+}
+```
+
+Campos opcionais: `size`, `responsiblePhone`, `cnpj`, `address`, `createdById`, `evaluatorIds`.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `POST`
+3. Inserir URL `{{baseURL}}/companies`
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `201`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 1,
+  "name": "Empresa XPTO",
+  "segment": "Tecnologia",
+  "size": "MEDIA",
+  "responsible": "Carlos Lima",
+  "responsibleEmail": "carlos@xpto.com",
+  "responsiblePhone": "+55 11 99999-0000",
+  "cnpj": "12.345.678/0001-90",
+  "address": "Sao Paulo - SP",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Listar empresas
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/companies`
+- Autenticacao: `Sim (Bearer Token - role ADMIN ou AVALIADOR)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL `{{baseURL}}/companies`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Empresa XPTO",
+    "segment": "Tecnologia",
+    "responsible": "Carlos Lima",
+    "responsibleEmail": "carlos@xpto.com",
+    "createdAt": "2026-03-30T12:00:00.000Z"
+  }
+]
+```
+
+### Buscar empresa por ID
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/companies/:id`
+- Autenticacao: `Sim (Bearer Token - ADMIN, AVALIADOR, CLIENTE)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL com ID numerico, ex. `{{baseURL}}/companies/1`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 1,
+  "name": "Empresa XPTO",
+  "segment": "Tecnologia",
+  "size": "MEDIA",
+  "responsible": "Carlos Lima",
+  "responsibleEmail": "carlos@xpto.com",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Atualizar empresa
+
+- Metodo: `PATCH`
+- URL: `{{baseURL}}/companies/:id`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+```json
+{
+  "name": "Empresa XPTO Atualizada",
+  "segment": "Financeiro",
+  "size": "GRANDE",
+  "responsible": "Ana Costa",
+  "responsibleEmail": "ana@xpto.com",
+  "responsiblePhone": "+55 11 98888-0000",
+  "cnpj": "98.765.432/0001-10",
+  "address": "Curitiba - PR",
+  "evaluatorIds": [
+    "2c3d4e5f-1111-2222-3333-444455556666",
+    "3d4e5f6a-1111-2222-3333-444455556666"
+  ]
+}
+```
+
+Todos os campos sao opcionais em atualizacao.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `PATCH`
+3. Inserir URL com ID numerico
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 1,
+  "name": "Empresa XPTO Atualizada",
+  "segment": "Financeiro",
+  "size": "GRANDE",
+  "responsible": "Ana Costa",
+  "responsibleEmail": "ana@xpto.com"
+}
+```
+
+### Remover empresa
+
+- Metodo: `DELETE`
+- URL: `{{baseURL}}/companies/:id`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `DELETE`
+3. Inserir URL com ID numerico
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 1,
+  "name": "Empresa XPTO Atualizada",
+  "segment": "Financeiro"
+}
+```
+
+---
+
+## Modulo Questions
+
+### Criar pergunta
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/questions`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+```json
+{
+  "text": "A empresa possui politica formal de seguranca?",
+  "category": "SEGURANCA",
+  "weight": 8.5,
+  "responseType": "YES_NO",
+  "evidenceRequired": true,
+  "hint": "Anexar politica vigente",
+  "createdById": "1b2c3d4e-1111-2222-3333-444455556666"
+}
+```
+
+Categorias validas: `GOVERNANCA`, `SEGURANCA`, `PROCESSOS`, `INFRAESTRUTURA`, `CULTURA`.
+Tipos de resposta: `YES_NO`, `SCALE`.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `POST`
+3. Inserir URL `{{baseURL}}/questions`
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `201`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 10,
+  "version": 1,
+  "text": "A empresa possui politica formal de seguranca?",
+  "category": "SEGURANCA",
+  "weight": "8.50",
+  "responseType": "YES_NO",
+  "evidenceRequired": true,
+  "isActive": true
+}
+```
+
+### Listar perguntas
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/questions`
+- Autenticacao: `Sim (Bearer Token - ADMIN, AVALIADOR, CLIENTE)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL `{{baseURL}}/questions`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+[
+  {
+    "id": 10,
+    "version": 1,
+    "text": "A empresa possui politica formal de seguranca?",
+    "category": "SEGURANCA",
+    "weight": "8.50",
+    "responseType": "YES_NO",
+    "evidenceRequired": true,
+    "isActive": true
+  }
+]
+```
+
+### Buscar pergunta por ID
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/questions/:id`
+- Autenticacao: `Sim (Bearer Token - ADMIN, AVALIADOR, CLIENTE)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL com ID numerico, ex. `{{baseURL}}/questions/10`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 10,
+  "version": 1,
+  "text": "A empresa possui politica formal de seguranca?",
+  "category": "SEGURANCA",
+  "weight": "8.50",
+  "responseType": "YES_NO",
+  "evidenceRequired": true,
+  "isActive": true
+}
+```
+
+### Criar nova versao de pergunta
+
+- Metodo: `PUT`
+- URL: `{{baseURL}}/questions/:id`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+```json
+{
+  "text": "A empresa possui politica de seguranca revisada no ultimo ano?",
+  "weight": 9.0,
+  "changedById": "1b2c3d4e-1111-2222-3333-444455556666"
+}
+```
+
+No DTO, apenas `changedById` e obrigatorio. Os demais campos sao opcionais.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `PUT`
+3. Inserir URL com ID numerico
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 10,
+  "version": 2,
+  "text": "A empresa possui politica de seguranca revisada no ultimo ano?",
+  "category": "SEGURANCA",
+  "weight": "9.00",
+  "responseType": "YES_NO",
+  "evidenceRequired": true,
+  "isActive": true
+}
+```
+
+### Inativar pergunta (soft delete)
+
+- Metodo: `DELETE`
+- URL: `{{baseURL}}/questions/:id`
+- Autenticacao: `Sim (Bearer Token - role ADMIN)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `DELETE`
+3. Inserir URL com ID numerico
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 10,
+  "isActive": false
+}
+```
+
+---
+
+## Modulo Assessments
+
+### Criar assessment
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/assessments`
+- Autenticacao: `Sim (Bearer Token - role ADMIN ou AVALIADOR)`
+
+#### Body (se houver):
+
+```json
+{
+  "companyId": 1,
+  "assessorId": "2c3d4e5f-1111-2222-3333-444455556666",
+  "status": "NOT_STARTED",
+  "startedAt": "2026-03-30T10:00:00.000Z",
+  "completedAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+Campos opcionais: `status`, `startedAt`, `completedAt`.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `POST`
+3. Inserir URL `{{baseURL}}/assessments`
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `201`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 100,
+  "companyId": 1,
+  "assessorId": "2c3d4e5f-1111-2222-3333-444455556666",
+  "status": "NOT_STARTED",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Inserir/atualizar respostas do assessment
+
+- Metodo: `PUT`
+- URL: `{{baseURL}}/assessments/:id/responses`
+- Autenticacao: `Sim (Bearer Token - role ADMIN ou AVALIADOR)`
+
+#### Body (se houver):
+
+```json
+{
+  "responses": [
+    {
+      "questionId": 10,
+      "responseValue": "SIM",
+      "evidence": "Politica publicada no portal interno",
+      "evidenceFileUrl": "https://files.exemplo.com/politica.pdf",
+      "observation": "Documento revisado em 2026",
+      "evidenceFiles": [
+        {
+          "fileName": "politica-seguranca.pdf",
+          "fileUrl": "https://files.exemplo.com/politica-seguranca.pdf",
+          "fileSize": 245760,
+          "mimeType": "application/pdf"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `PUT`
+3. Inserir URL com ID numerico, ex. `{{baseURL}}/assessments/100/responses`
+4. Adicionar headers
+5. Inserir body JSON
+6. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 100,
+  "status": "IN_PROGRESS",
+  "responses": [
+    {
+      "questionId": 10,
+      "responseValue": "SIM",
+      "evidence": "Politica publicada no portal interno"
+    }
+  ]
+}
+```
+
+### Submeter assessment (gera/retorna report)
+
+- Metodo: `POST`
+- URL: `{{baseURL}}/assessments/:id/submit`
+- Autenticacao: `Sim (Bearer Token - role ADMIN ou AVALIADOR)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `POST`
+3. Inserir URL com ID numerico, ex. `{{baseURL}}/assessments/100/submit`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 55,
+  "assessmentId": 100,
+  "totalScore": "78.50",
+  "maturityLevel": "EFICAZ",
+  "payload": {
+    "assessmentId": 100,
+    "totalScore": 78.5,
+    "maturityLevel": "EFICAZ",
+    "categoryScores": {
+      "GOVERNANCA": 80,
+      "SEGURANCA": 75,
+      "PROCESSOS": 79,
+      "INFRAESTRUTURA": 82,
+      "CULTURA": 77
+    },
+    "strengths": [],
+    "weaknesses": [],
+    "recommendations": []
+  }
+}
+```
+
+### Buscar assessment por ID
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/assessments/:id`
+- Autenticacao: `Sim (Bearer Token - ADMIN, AVALIADOR, CLIENTE)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL com ID numerico
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+{
+  "id": 100,
+  "companyId": 1,
+  "assessorId": "2c3d4e5f-1111-2222-3333-444455556666",
+  "status": "IN_PROGRESS",
+  "createdAt": "2026-03-30T12:00:00.000Z"
+}
+```
+
+### Listar assessments
+
+- Metodo: `GET`
+- URL: `{{baseURL}}/assessments`
+- Autenticacao: `Sim (Bearer Token - ADMIN, AVALIADOR, CLIENTE)`
+
+#### Body (se houver):
+
+Nao possui body.
+
+#### Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer {{token}}
+```
+
+#### Passo a passo no Insomnia:
+
+1. Criar nova requisicao
+2. Selecionar metodo `GET`
+3. Inserir URL `{{baseURL}}/assessments`
+4. Adicionar headers
+5. Enviar requisicao
+
+#### Resposta esperada:
+
+- Status: `200`
+- Exemplo de resposta:
+
+```json
+[
+  {
+    "id": 100,
+    "companyId": 1,
+    "assessorId": "2c3d4e5f-1111-2222-3333-444455556666",
+    "status": "IN_PROGRESS",
+    "createdAt": "2026-03-30T12:00:00.000Z"
+  }
+]
+```
+
+---
+
+## Codigos de erro comuns
+
+- `400 Bad Request`: payload invalido (DTO/validacao), ID mal formatado, regra de negocio violada.
+- `401 Unauthorized`: token ausente, invalido ou expirado.
+- `403 Forbidden`: usuario autenticado sem permissao de role para a rota.
+- `404 Not Found`: recurso nao encontrado.
+
+## Dicas rapidas para nao travar no teste
+
+- Sempre faca login primeiro e salve `{{token}}`.
+- Em rotas protegidas, confirme `Authorization: Bearer {{token}}`.
+- IDs de `users` sao UUID v4.
+- IDs de `companies`, `questions` e `assessments` sao inteiros.
+- Com `ValidationPipe` ativo, campos extras no body retornam erro.
