@@ -6,9 +6,8 @@ export class CreateAssessmentDto {
   companyId!: number;
 
   /** When set, creates a multi-collaborator assessment from this global template. */
-  @IsOptional()
   @IsInt()
-  questionnaireTemplateId?: number;
+  questionnaireTemplateId!: number;
 
   @IsOptional()
   @IsUUID('4')

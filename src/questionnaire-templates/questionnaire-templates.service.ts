@@ -61,15 +61,29 @@ export class QuestionnaireTemplatesService {
   }
 
   async findAllForCatalog(includeInactiveForAdmin: boolean) {
-    return this.prisma.questionnaireTemplate.findMany({
+    const rows = await this.prisma.questionnaireTemplate.findMany({
       where: includeInactiveForAdmin ? undefined : { isActive: true },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        updatedAt: true,
         questions: {
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-          include: questionInclude,
+          select: { category: true },
         },
       },
       orderBy: { updatedAt: 'desc' },
+    });
+
+    return rows.map((t) => {
+      const categories = Array.from(new Set(t.questions.map((q) => q.category)));
+      return {
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        questionCount: t.questions.length,
+        categories,
+      };
     });
   }
 
