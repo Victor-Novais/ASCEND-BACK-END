@@ -11,6 +11,7 @@ import { AssessmentsModule } from './assessments/assessments.module';
 import { QuestionnaireTemplatesModule } from './questionnaire-templates/questionnaire-templates.module';
 import { ReportModule } from './report/report.module';
 import { ScoreModule } from './score/score.module';
+import { AnswersModule } from './answers/answers.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ScoreModule } from './score/score.module';
     QuestionsModule,
     QuestionnaireTemplatesModule,
     AssessmentsModule,
+    AnswersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

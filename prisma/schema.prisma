@@ -229,6 +229,7 @@ model Assessment {
   questionnaireTemplate   QuestionnaireTemplate?  @relation(fields: [questionnaireTemplateId], references: [id])
   assignments             AssessmentAssignment[]
   questions               AssessmentQuestion[]
+  answers                 Answer[]
 
   responses AssessmentResponse[]
   report    Report?
@@ -248,6 +249,7 @@ model AssessmentQuestion {
   assessment Assessment               @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   options    AssessmentQuestionOption[]
   responses  AssessmentResponse[]
+  answers    Answer[]
 
   @@index([assessmentId])
 }
@@ -260,8 +262,25 @@ model AssessmentQuestionOption {
   order                Int?
 
   question AssessmentQuestion @relation(fields: [assessmentQuestionId], references: [id], onDelete: Cascade)
+  answers  Answer[]          @relation("AnswerSelectedOption")
 
   @@index([assessmentQuestionId])
+}
+
+model Answer {
+  id                   Int      @id @default(autoincrement())
+  assessmentId         Int
+  assessmentQuestionId Int
+  selectedOptionId     Int
+  answeredBy           String
+  createdAt            DateTime @default(now())
+
+  assessment         Assessment               @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessmentQuestion AssessmentQuestion       @relation(fields: [assessmentQuestionId], references: [id], onDelete: Cascade)
+  selectedOption     AssessmentQuestionOption @relation("AnswerSelectedOption", fields: [selectedOptionId], references: [id], onDelete: Restrict)
+
+  @@unique([assessmentId, assessmentQuestionId, answeredBy])
+  @@index([assessmentId, answeredBy])
 }
 
 
