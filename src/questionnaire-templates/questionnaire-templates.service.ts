@@ -61,30 +61,39 @@ export class QuestionnaireTemplatesService {
   }
 
   async findAllForCatalog(includeInactiveForAdmin: boolean) {
-    const rows = await this.prisma.questionnaireTemplate.findMany({
+    const templates = await this.prisma.questionnaireTemplate.findMany({
       where: includeInactiveForAdmin ? undefined : { isActive: true },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        updatedAt: true,
+      include: {
         questions: {
-          select: { category: true },
+          include: {
+            options: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
-    return rows.map((t) => {
-      const categories = Array.from(new Set(t.questions.map((q) => q.category)));
-      return {
+    // TEMP debug logging for production incident triage.
+    // eslint-disable-next-line no-console
+    console.log('TEMPLATES:', {
+      count: templates.length,
+      hasDatabaseUrl: Boolean(process.env.DATABASE_URL),
+      items: templates.map((t) => ({
         id: t.id,
         name: t.name,
-        description: t.description,
+        isActive: t.isActive,
         questionCount: t.questions.length,
-        categories,
-      };
+      })),
     });
+
+    return templates.map((t) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      questionCount: t.questions.length,
+      categories: Array.from(new Set(t.questions.map((q) => q.category))),
+    }));
   }
 
   async findOne(id: number) {
