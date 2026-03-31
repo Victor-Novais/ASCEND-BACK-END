@@ -47,7 +47,7 @@ export class AssessmentCalculatorService {
                 weight: true,
               },
             },
-            questionTemplate: {
+            assessmentQuestion: {
               select: {
                 id: true,
                 category: true,
@@ -131,13 +131,13 @@ export class AssessmentCalculatorService {
       assignments: Array<{ status: AssessmentAssignmentStatus; userId: string }>;
       responses: Array<{
         id: number;
-        questionTemplateId: number | null;
+        assessmentQuestionId: number | null;
         userId: string | null;
         responseValue: string;
         score: Prisma.Decimal;
-        questionTemplate: {
+        assessmentQuestion: {
           id: number;
-          category: QuestionCategory;
+          category: QuestionCategory | null;
           responseType: ResponseType;
           weight: Prisma.Decimal;
         } | null;
@@ -160,16 +160,16 @@ export class AssessmentCalculatorService {
     const byTemplate = new Map<number, number[]>();
     for (const r of assessment.responses) {
       if (
-        r.questionTemplateId == null ||
-        r.questionTemplate == null ||
+        r.assessmentQuestionId == null ||
+        r.assessmentQuestion == null ||
         !r.userId ||
         !submittedUserIds.has(r.userId)
       ) {
         continue;
       }
-      const list = byTemplate.get(r.questionTemplateId) ?? [];
+      const list = byTemplate.get(r.assessmentQuestionId) ?? [];
       list.push(Number(r.score));
-      byTemplate.set(r.questionTemplateId, list);
+      byTemplate.set(r.assessmentQuestionId, list);
     }
 
     const categoryWeightedScores = this.emptyCategoryAccumulator();
@@ -178,10 +178,10 @@ export class AssessmentCalculatorService {
 
     for (const [templateQuestionId, scores] of byTemplate) {
       const sample = assessment.responses.find(
-        (r) => r.questionTemplateId === templateQuestionId && r.questionTemplate,
+        (r) => r.assessmentQuestionId === templateQuestionId && r.assessmentQuestion,
       );
-      const qt = sample?.questionTemplate;
-      if (!qt || scores.length === 0) {
+      const qt = sample?.assessmentQuestion;
+      if (!qt || qt.category == null || scores.length === 0) {
         continue;
       }
 

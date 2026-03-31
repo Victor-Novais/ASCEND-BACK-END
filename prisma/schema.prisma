@@ -156,7 +156,6 @@ model QuestionTemplate {
 
   questionnaireTemplate QuestionnaireTemplate @relation(fields: [questionnaireTemplateId], references: [id], onDelete: Cascade)
   options               QuestionTemplateOption[]
-  responses             AssessmentResponse[]
 
   @@index([questionnaireTemplateId])
 }
@@ -229,10 +228,40 @@ model Assessment {
   assessor                User                    @relation("Assessor", fields: [assessorId], references: [id])
   questionnaireTemplate   QuestionnaireTemplate?  @relation(fields: [questionnaireTemplateId], references: [id])
   assignments             AssessmentAssignment[]
+  questions               AssessmentQuestion[]
 
   responses AssessmentResponse[]
   report    Report?
   history   AssessmentHistory[]
+}
+
+model AssessmentQuestion {
+  id           Int      @id @default(autoincrement())
+  assessmentId Int
+  text         String
+  category     QuestionCategory?
+  order        Int?
+  responseType ResponseType
+  weight       Decimal  @db.Decimal(3, 2)
+  createdAt    DateTime @default(now())
+
+  assessment Assessment               @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  options    AssessmentQuestionOption[]
+  responses  AssessmentResponse[]
+
+  @@index([assessmentId])
+}
+
+model AssessmentQuestionOption {
+  id                   Int    @id @default(autoincrement())
+  assessmentQuestionId Int
+  text                 String
+  weight               Int
+  order                Int?
+
+  question AssessmentQuestion @relation(fields: [assessmentQuestionId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentQuestionId])
 }
 
 
@@ -241,8 +270,10 @@ model AssessmentResponse {
   assessmentId       Int
   /// Legacy single-evaluator assessments (no template).
   questionId         Int?
-  /// Template-based assessments: one row per (assessment, questionTemplate, user).
-  questionTemplateId Int?
+  /// Cloned assessment question id (template-based).
+  assessmentQuestionId Int?
+  /// Selected cloned option id.
+  selectedOptionId   Int?
   userId             String?   @db.Uuid
   questionVersion    Int
   responseValue      String
@@ -255,13 +286,13 @@ model AssessmentResponse {
 
   assessment       Assessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   question         Question?         @relation(fields: [questionId], references: [id])
-  questionTemplate QuestionTemplate? @relation(fields: [questionTemplateId], references: [id])
+  assessmentQuestion AssessmentQuestion? @relation(fields: [assessmentQuestionId], references: [id])
   user             User?             @relation(fields: [userId], references: [id])
 
   evidenceFiles EvidenceFile[]
 
   @@index([assessmentId, userId])
-  @@index([assessmentId, questionTemplateId])
+  @@index([assessmentId, assessmentQuestionId])
 }
 
 

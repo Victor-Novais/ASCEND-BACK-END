@@ -46,6 +46,7 @@ export function computeResponseScore(
 }
 
 type TemplateOptionRow = { id: number; scoreValue: Prisma.Decimal };
+type AssessmentOptionRow = { id: number; weight: number };
 
 /**
  * Template questions may define explicit options (0–5 scoreValue).
@@ -76,4 +77,31 @@ export function computeTemplateQuestionScore(
     return { normalizedValue: String(id), score };
   }
   return computeResponseScore(responseType, trimmed);
+}
+
+export function computeAssessmentQuestionScore(
+  responseType: ResponseType,
+  options: AssessmentOptionRow[],
+  responseValue: string,
+): { normalizedValue: string; score: number; selectedOptionId: number | null } {
+  const trimmed = responseValue.trim();
+  if (options.length > 0) {
+    const id = Number(trimmed);
+    if (!Number.isInteger(id)) {
+      throw new BadRequestException(
+        `OPTION-style response must be a numeric option id, got "${responseValue}"`,
+      );
+    }
+    const opt = options.find((o) => o.id === id);
+    if (!opt) {
+      throw new BadRequestException(`Invalid option id ${id} for this question`);
+    }
+    if (!Number.isFinite(opt.weight) || opt.weight < 0 || opt.weight > 5) {
+      throw new BadRequestException('Option weight must be between 0 and 5');
+    }
+    const score = Math.round((opt.weight / 5) * 100 * 100) / 100;
+    return { normalizedValue: String(id), score, selectedOptionId: id };
+  }
+  const scored = computeResponseScore(responseType, trimmed);
+  return { ...scored, selectedOptionId: null };
 }

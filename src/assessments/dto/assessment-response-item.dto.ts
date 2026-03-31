@@ -35,11 +35,17 @@ export class AssessmentResponseItemDto {
   @Min(1)
   questionId?: number;
 
-  /** Template-based assessments; mutually exclusive with questionId. */
+  /** Cloned question id for template-based assessments; mutually exclusive with questionId. */
   @IsOptional()
   @IsInt()
   @Min(1)
-  questionTemplateId?: number;
+  assessmentQuestionId?: number;
+
+  /** Selected cloned option id for template-based assessments. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  selectedOptionId?: number;
 
   @IsString()
   @MaxLength(500)

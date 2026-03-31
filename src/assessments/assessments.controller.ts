@@ -58,6 +58,12 @@ export class AssessmentsController {
     return this.assessmentsService.submitParticipantAssessment(id, user);
   }
 
+  @Get(':id/questions')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
+  findQuestions(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.assessmentsService.findQuestions(id, user);
+  }
+
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {

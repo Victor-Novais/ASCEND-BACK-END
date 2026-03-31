@@ -91,18 +91,18 @@ function assessmentTenantFilter(
   };
 }
 
-/** Legacy row: questionId + userId null. Template row: questionTemplateId + userId. */
+/** Legacy row: questionId + userId null. Cloned row: assessmentQuestionId + userId. */
 export function assessmentResponseWhereForUser(
   assessmentId: number,
   user: CurrentUser,
   target:
     | { questionId: number; userId?: null }
-    | { questionTemplateId: number; userId: string },
+    | { assessmentQuestionId: number; userId: string },
 ): Prisma.AssessmentResponseWhereInput {
-  if ('questionTemplateId' in target) {
+  if ('assessmentQuestionId' in target) {
     return {
       assessmentId,
-      questionTemplateId: target.questionTemplateId,
+      assessmentQuestionId: target.assessmentQuestionId,
       userId: target.userId,
       ...assessmentTenantFilter(user),
     };

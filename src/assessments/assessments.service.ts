@@ -25,7 +25,7 @@ import { AssessmentResponseItemDto } from './dto/assessment-response-item.dto';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { AssessmentCalculatorService } from './assessment-calculator.service';
 import { ReportService } from '../report/report.service';
-import { computeResponseScore, computeTemplateQuestionScore } from './utils/response-scoring';
+import { computeAssessmentQuestionScore, computeResponseScore } from './utils/response-scoring';
 
 type AssessmentWithRelations = Assessment & {
   company: {
@@ -58,11 +58,20 @@ type AssessmentWithRelations = Assessment & {
       options: Array<{ id: number; label: string; scoreValue: Prisma.Decimal; sortOrder: number }>;
     }>;
   } | null;
+  questions?: Array<{
+    id: number;
+    text: string;
+    category: string | null;
+    order: number | null;
+    responseType: string;
+    options: Array<{ id: number; text: string; weight: number; order: number | null }>;
+  }>;
   report?: unknown;
   responses: Array<{
     id: number;
     questionId: number | null;
-    questionTemplateId: number | null;
+    assessmentQuestionId: number | null;
+    selectedOptionId: number | null;
     userId: string | null;
     questionVersion: number;
     responseValue: string;
@@ -78,12 +87,12 @@ type AssessmentWithRelations = Assessment & {
       category: string;
       responseType: string;
     } | null;
-    questionTemplate: {
+    assessmentQuestion: {
       id: number;
       text: string;
       category: string;
       responseType: string;
-      options: Array<{ id: number; label: string; scoreValue: Prisma.Decimal; sortOrder: number }>;
+      options: Array<{ id: number; text: string; weight: number; order: number | null }>;
     } | null;
     evidenceFiles: Array<{
       id: number;
@@ -129,11 +138,13 @@ export class AssessmentsService {
   ): Promise<AssessmentWithRelations> {
     await this.ensureCompanyAccess(dto.companyId, currentUser);
     const templateId = dto.questionnaireTemplateId!;
-
     const template = await this.prisma.questionnaireTemplate.findFirst({
       where: { id: templateId, isActive: true },
       include: {
-        questions: { select: { id: true } },
+        questions: {
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          include: { options: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
+        },
       },
     });
 
@@ -177,6 +188,37 @@ export class AssessmentsService {
 
       return a;
     });
+
+    try {
+      for (const question of template.questions) {
+        const clonedQuestion = await this.prisma.assessmentQuestion.create({
+          data: {
+            assessmentId: assessment.id,
+            text: question.text,
+            category: question.category,
+            order: question.sortOrder,
+            responseType: question.responseType,
+            weight: question.weight,
+          },
+        });
+
+        for (const option of question.options) {
+          await this.prisma.assessmentQuestionOption.create({
+            data: {
+              assessmentQuestionId: clonedQuestion.id,
+              text: option.label,
+              weight: Number(option.scoreValue),
+              order: option.sortOrder,
+            },
+          });
+        }
+      }
+    } catch (error) {
+      await this.prisma.assessment.delete({
+        where: { id: assessment.id },
+      });
+      throw error;
+    }
 
     return this.findOne(assessment.id, currentUser);
   }
@@ -272,14 +314,34 @@ export class AssessmentsService {
       throw new ForbiddenException('You do not have access to this assessment');
     }
 
-    if (assessment.questionnaireTemplateId == null || !assessment.questionnaireTemplate) {
-      throw new BadRequestException(
-        'This assessment is not template-based; questionnaireTemplate is required for the contract',
-      );
-    }
-
     const masked = this.maskAssessmentForViewer(assessment as AssessmentWithRelations, currentUser);
     return this.normalizeAssessmentForContract(masked, currentUser);
+  }
+
+  async findQuestions(id: number, currentUser: JwtPayload) {
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhereForUser(id, { id: currentUser.sub, role: currentUser.role }),
+      select: {
+        id: true,
+        status: true,
+        questions: {
+          orderBy: [{ order: 'asc' }, { id: 'asc' }],
+          include: {
+            options: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },
+          },
+        },
+      },
+    });
+
+    if (!assessment) {
+      throw new ForbiddenException('You do not have access to this assessment');
+    }
+
+    return {
+      assessmentId: assessment.id,
+      status: assessment.status,
+      assessmentQuestions: assessment.questions,
+    };
   }
 
   async submitParticipantAssessment(
@@ -296,11 +358,7 @@ export class AssessmentsService {
         role: currentUser.role,
       }),
       include: {
-        questionnaireTemplate: {
-          include: {
-            questions: { select: { id: true } },
-          },
-        },
+        questions: { select: { id: true } },
         assignments: true,
       },
     });
@@ -309,7 +367,7 @@ export class AssessmentsService {
       throw new ForbiddenException('You do not have access to this assessment');
     }
 
-    if (!assessment.questionnaireTemplateId || !assessment.questionnaireTemplate) {
+    if (!assessment.questionnaireTemplateId) {
       throw new BadRequestException('This assessment does not use collaborator submissions');
     }
 
@@ -325,18 +383,18 @@ export class AssessmentsService {
       throw new BadRequestException('You have already submitted your responses');
     }
 
-    const qIds = assessment.questionnaireTemplate.questions.map((q) => q.id);
+    const qIds = assessment.questions.map((q) => q.id);
     for (const qid of qIds) {
       const row = await this.prisma.assessmentResponse.findFirst({
         where: {
           assessmentId,
-          questionTemplateId: qid,
+          assessmentQuestionId: qid,
           userId: currentUser.sub,
         },
       });
       if (!row) {
         throw new BadRequestException(
-          `Missing answer for question template ${qid}; save all answers before submitting`,
+          `Missing answer for assessment question ${qid}; save all answers before submitting`,
         );
       }
     }
@@ -405,8 +463,11 @@ export class AssessmentsService {
       throw new ForbiddenException('You do not have access to this assessment');
     }
 
-    if (assessment.status === AssessmentStatus.SUBMITTED) {
-      throw new BadRequestException('Cannot modify responses for a submitted assessment');
+    if (
+      assessment.status === AssessmentStatus.SUBMITTED ||
+      assessment.status === AssessmentStatus.COMPLETED
+    ) {
+      throw new BadRequestException('Cannot modify responses for a finalized assessment');
     }
 
     if (assessment.questionnaireTemplateId) {
@@ -443,67 +504,62 @@ export class AssessmentsService {
       throw new BadRequestException('Cannot modify answers after submission');
     }
 
-    // Contract: frontend can send `questionId` as an alias for `questionTemplateId` (template question ids).
     const normalizedResponses = dto.responses.map((r) => {
-      const hasQ = r.questionId != null;
-      const hasT = r.questionTemplateId != null;
-      if (hasQ && hasT) {
+      const hasLegacyQuestionId = r.questionId != null;
+      const hasAssessmentQuestionId = r.assessmentQuestionId != null;
+
+      if (hasLegacyQuestionId) {
         throw new BadRequestException(
-          'Each response must set exactly one of questionId or questionTemplateId',
+          'Template-based assessments only accept assessmentQuestionId (cloned question id)',
         );
       }
-      if (!hasQ && !hasT) {
-        throw new BadRequestException(
-          'Each response must set questionId (alias) or questionTemplateId',
-        );
+      if (!hasAssessmentQuestionId) {
+        throw new BadRequestException('Each response must set assessmentQuestionId');
       }
 
-      const questionTemplateId = (r.questionTemplateId ?? r.questionId)!;
-
-      return {
-        ...r,
-        questionTemplateId,
-        questionId: undefined,
-      };
+      return r;
     });
 
-    const templateQuestionIds = new Set<number>();
+    const assessmentQuestionIds = new Set<number>();
     for (const r of normalizedResponses) {
-      if (templateQuestionIds.has(r.questionTemplateId!)) {
+      if (assessmentQuestionIds.has(r.assessmentQuestionId!)) {
         throw new BadRequestException(
-          `Duplicate questionTemplateId ${r.questionTemplateId} in the same request`,
+          `Duplicate assessmentQuestionId ${r.assessmentQuestionId} in the same request`,
         );
       }
-      templateQuestionIds.add(r.questionTemplateId!);
+      assessmentQuestionIds.add(r.assessmentQuestionId!);
     }
 
-    const tQuestions = await this.prisma.questionTemplate.findMany({
+    const clonedQuestions = await this.prisma.assessmentQuestion.findMany({
       where: {
-        id: { in: [...templateQuestionIds] },
-        questionnaireTemplateId: assessment.questionnaireTemplateId!,
+        id: { in: [...assessmentQuestionIds] },
+        assessmentId,
       },
-      include: { options: { orderBy: { sortOrder: 'asc' } } },
+      include: { options: { orderBy: [{ order: 'asc' }, { id: 'asc' }] } },
     });
 
-    const tById = new Map(tQuestions.map((q) => [q.id, q]));
-    for (const id of templateQuestionIds) {
-      const q = tById.get(id);
+    const qById = new Map(clonedQuestions.map((q) => [q.id, q]));
+    for (const id of assessmentQuestionIds) {
+      const q = qById.get(id);
       if (!q) {
         throw new BadRequestException(
-          `Question template ${id} does not belong to this assessment template`,
+          `Assessment question ${id} does not belong to this assessment`,
         );
       }
     }
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of normalizedResponses) {
-        const q = tById.get(item.questionTemplateId!)!;
-        this.assertEvidenceSatisfied(q.evidenceRequired, item, item.questionTemplateId!);
+        const q = qById.get(item.assessmentQuestionId!)!;
+        const requiresEvidence = q.options.length === 0;
+        this.assertEvidenceSatisfied(requiresEvidence, item, item.assessmentQuestionId!);
 
-        const { normalizedValue, score } = computeTemplateQuestionScore(
+        const effectiveResponseValue =
+          item.selectedOptionId != null ? String(item.selectedOptionId) : item.responseValue;
+        const { normalizedValue, score, selectedOptionId } = computeAssessmentQuestionScore(
           q.responseType,
-          q.options.map((o) => ({ id: o.id, scoreValue: o.scoreValue })),
-          item.responseValue,
+          q.options.map((o) => ({ id: o.id, weight: o.weight })),
+          effectiveResponseValue,
         );
         const scoreDecimal = new Prisma.Decimal(score);
 
@@ -512,7 +568,7 @@ export class AssessmentsService {
             assessmentId,
             { id: currentUser.sub, role: currentUser.role },
             {
-              questionTemplateId: item.questionTemplateId!,
+              assessmentQuestionId: item.assessmentQuestionId!,
               userId: currentUser.sub,
             },
           ),
@@ -526,7 +582,8 @@ export class AssessmentsService {
           await tx.assessmentResponse.update({
             where: { id: existing.id },
             data: {
-              questionTemplateId: item.questionTemplateId!,
+              assessmentQuestionId: item.assessmentQuestionId!,
+              selectedOptionId,
               questionId: null,
               userId: currentUser.sub,
               questionVersion: 1,
@@ -543,7 +600,8 @@ export class AssessmentsService {
           const created = await tx.assessmentResponse.create({
             data: {
               assessmentId,
-              questionTemplateId: item.questionTemplateId!,
+              assessmentQuestionId: item.assessmentQuestionId!,
+              selectedOptionId,
               questionId: null,
               userId: currentUser.sub,
               questionVersion: 1,
@@ -585,14 +643,17 @@ export class AssessmentsService {
   ): Promise<AssessmentWithRelations> {
     for (const r of dto.responses) {
       const hasQ = r.questionId != null;
-      const hasT = r.questionTemplateId != null;
-      if (hasQ === hasT) {
+      const hasAq = r.assessmentQuestionId != null;
+      if (!hasQ) {
         throw new BadRequestException(
-          'Each response must set exactly one of questionId or questionTemplateId',
+          'Each response must set only questionId for legacy assessments',
         );
       }
       if (r.questionId == null) {
         throw new BadRequestException('Legacy assessments only accept questionId');
+      }
+      if (hasAq) {
+        throw new BadRequestException('Legacy assessments do not accept assessmentQuestionId');
       }
     }
 
@@ -664,7 +725,8 @@ export class AssessmentsService {
             where: { id: existing.id },
             data: {
               questionId: item.questionId!,
-              questionTemplateId: null,
+              assessmentQuestionId: null,
+              selectedOptionId: null,
               userId: null,
               questionVersion: question.version,
               responseValue: normalizedValue,
@@ -682,7 +744,8 @@ export class AssessmentsService {
             data: {
               assessmentId,
               questionId: item.questionId!,
-              questionTemplateId: null,
+              assessmentQuestionId: null,
+              selectedOptionId: null,
               userId: null,
               questionVersion: question.version,
               responseValue: normalizedValue,
@@ -905,6 +968,12 @@ export class AssessmentsService {
         description: true,
       },
     },
+    questions: {
+      include: {
+        options: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },
+      },
+      orderBy: [{ order: 'asc' }, { id: 'asc' }],
+    },
     report: true,
     responses: {
       include: {
@@ -916,13 +985,13 @@ export class AssessmentsService {
             responseType: true,
           },
         },
-        questionTemplate: {
+        assessmentQuestion: {
           select: {
             id: true,
             text: true,
             category: true,
             responseType: true,
-            options: { orderBy: { sortOrder: 'asc' } },
+            options: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },
           },
         },
         evidenceFiles: true,
@@ -931,35 +1000,18 @@ export class AssessmentsService {
     },
   } satisfies Prisma.AssessmentInclude;
 
-  /** Full template questions for answering / review on the detail screen. */
   private readonly findOneInclude = {
     company: this.listInclude.company,
     assessor: this.listInclude.assessor,
     assignments: this.listInclude.assignments,
     report: this.listInclude.report,
+    questions: this.listInclude.questions,
     responses: this.listInclude.responses,
     questionnaireTemplate: {
-      include: {
-        questions: {
-          orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
-          select: {
-            id: true,
-            text: true,
-            category: true,
-            weight: true,
-            responseType: true,
-            sortOrder: true,
-            options: {
-              orderBy: { sortOrder: 'asc' as const },
-              select: {
-                id: true,
-                label: true,
-                scoreValue: true,
-                sortOrder: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        name: true,
+        description: true,
       },
     },
   } satisfies Prisma.AssessmentInclude;
@@ -1034,15 +1086,15 @@ export class AssessmentsService {
 
     if (Array.isArray(assessment?.responses)) {
       assessment.responses = assessment.responses.map((r: any) => {
-        const normalizedQuestionId = r.questionId ?? r.questionTemplateId ?? null;
+        const normalizedQuestionId = r.questionId ?? r.assessmentQuestionId ?? null;
 
         return {
           ...r,
           questionId: normalizedQuestionId,
-          ...(r.questionTemplate
+          ...(r.assessmentQuestion
             ? {
-                questionTemplate: this.normalizeQuestionnaireTemplateForContract(
-                  r.questionTemplate,
+                assessmentQuestion: this.normalizeQuestionnaireTemplateForContract(
+                  r.assessmentQuestion,
                 ),
               }
             : {}),
