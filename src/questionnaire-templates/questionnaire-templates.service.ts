@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateQuestionnaireTemplateDto } from './dto/create-questionnaire-template.dto';
 import { CreateQuestionTemplateDto } from './dto/create-question-template.dto';
 import { CreateQuestionTemplateOptionDto } from './dto/create-question-template-option.dto';
+import { TemplateCatalogResponseDto } from './dto/template-catalog-response.dto';
 import { UpdateQuestionnaireTemplateDto } from './dto/update-questionnaire-template.dto';
 
 const questionInclude = {
@@ -60,40 +61,39 @@ export class QuestionnaireTemplatesService {
     });
   }
 
-  async findAllForCatalog(includeInactiveForAdmin: boolean) {
+  async findAllForCatalog(
+    includeInactiveForAdmin: boolean,
+  ): Promise<TemplateCatalogResponseDto> {
     const templates = await this.prisma.questionnaireTemplate.findMany({
       where: includeInactiveForAdmin ? undefined : { isActive: true },
       include: {
         questions: {
-          include: {
-            options: true,
+          select: {
+            category: true,
           },
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
-    // TEMP debug logging for production incident triage.
-    // eslint-disable-next-line no-console
-    console.log('TEMPLATES:', {
+    const response: TemplateCatalogResponseDto = {
       count: templates.length,
-      hasDatabaseUrl: Boolean(process.env.DATABASE_URL),
       items: templates.map((t) => ({
         id: t.id,
         name: t.name,
+        description: t.description,
         isActive: t.isActive,
         questionCount: t.questions.length,
+        categories: Array.from(new Set(t.questions.map((q) => q.category))),
       })),
+    };
+
+    // eslint-disable-next-line no-console
+    console.log('TEMPLATES RESPONSE:', {
+      count: response.count,
     });
 
-    return templates.map((t) => ({
-      id: t.id,
-      name: t.name,
-      description: t.description,
-      questionCount: t.questions.length,
-      categories: Array.from(new Set(t.questions.map((q) => q.category))),
-    }));
+    return response;
   }
 
   async findOne(id: number) {
