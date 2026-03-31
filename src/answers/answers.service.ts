@@ -79,21 +79,33 @@ export class AnswersService {
       }
     }
 
-    await this.prisma.answer.deleteMany({
-      where: {
-        assessmentId: dto.assessmentId,
-        answeredBy: user.sub,
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.answer.deleteMany({
+        where: {
+          assessmentId: dto.assessmentId,
+          answeredBy: user.sub,
+        },
+      });
 
-    await this.prisma.answer.createMany({
-      data: dto.answers.map((item) => ({
-        assessmentId: dto.assessmentId,
-        assessmentQuestionId: item.assessmentQuestionId,
-        selectedOptionId: item.selectedOptionId,
-        answeredBy: user.sub,
-      })),
-      skipDuplicates: true,
+      await tx.answer.createMany({
+        data: dto.answers.map((item) => ({
+          assessmentId: dto.assessmentId,
+          assessmentQuestionId: item.assessmentQuestionId,
+          selectedOptionId: item.selectedOptionId,
+          answeredBy: user.sub,
+        })),
+        skipDuplicates: true,
+      });
+
+      if (assessment.status === AssessmentStatus.NOT_STARTED) {
+        await tx.assessment.update({
+          where: { id: dto.assessmentId },
+          data: {
+            status: AssessmentStatus.IN_PROGRESS,
+            startedAt: new Date(),
+          },
+        });
+      }
     });
 
     return {
