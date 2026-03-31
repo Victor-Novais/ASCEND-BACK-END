@@ -100,7 +100,12 @@ export class ReportService {
       );
     }
 
-    const items = this.buildScoreItems(assessment.responses);
+    const items = this.buildScoreItems(
+      assessment.responses.filter(
+        (r): r is typeof r & { questionId: number; question: NonNullable<(typeof r)['question']> } =>
+          r.questionId != null && r.question != null,
+      ),
+    );
     if (items.length === 0) {
       throw new BadRequestException(
         'Cannot generate a report without assessment responses',

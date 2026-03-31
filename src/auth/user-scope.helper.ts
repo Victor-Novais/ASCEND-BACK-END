@@ -47,29 +47,70 @@ export function assessmentWhereForUser(
     return { id };
   }
 
+  if (user.role === Role.COLLABORATOR) {
+    return {
+      id,
+      company: userCompanyScope(user.id),
+      assignments: { some: { userId: user.id } },
+    };
+  }
+
   return {
     id,
     company: userCompanyScope(user.id),
   };
 }
 
-export function assessmentResponseWhereForUser(
-  assessmentId: number,
-  questionId: number,
+/**
+ * List filter for assessments (non-admin callers).
+ * Collaborators only see assessments explicitly assigned to them.
+ */
+export function assessmentsScopeForUser(
   user: CurrentUser,
-): Prisma.AssessmentResponseWhereInput {
+): Prisma.AssessmentWhereInput | undefined {
   if (isAdmin(user)) {
+    return undefined;
+  }
+  if (user.role === Role.COLLABORATOR) {
     return {
-      assessmentId,
-      questionId,
+      company: userCompanyScope(user.id),
+      assignments: { some: { userId: user.id } },
     };
   }
+  return { company: userCompanyScope(user.id) };
+}
 
+function assessmentTenantFilter(
+  user: CurrentUser,
+): Pick<Prisma.AssessmentResponseWhereInput, 'assessment'> {
+  if (isAdmin(user)) {
+    return {};
+  }
+  return {
+    assessment: { company: userCompanyScope(user.id) },
+  };
+}
+
+/** Legacy row: questionId + userId null. Template row: questionTemplateId + userId. */
+export function assessmentResponseWhereForUser(
+  assessmentId: number,
+  user: CurrentUser,
+  target:
+    | { questionId: number; userId?: null }
+    | { questionTemplateId: number; userId: string },
+): Prisma.AssessmentResponseWhereInput {
+  if ('questionTemplateId' in target) {
+    return {
+      assessmentId,
+      questionTemplateId: target.questionTemplateId,
+      userId: target.userId,
+      ...assessmentTenantFilter(user),
+    };
+  }
   return {
     assessmentId,
-    questionId,
-    assessment: {
-      company: userCompanyScope(user.id),
-    },
+    questionId: target.questionId,
+    userId: target.userId ?? null,
+    ...assessmentTenantFilter(user),
   };
 }

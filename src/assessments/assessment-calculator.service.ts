@@ -1,5 +1,12 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
-import { MaturityLevel, Prisma, QuestionCategory, ResponseType, Role } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  AssessmentAssignmentStatus,
+  MaturityLevel,
+  Prisma,
+  QuestionCategory,
+  ResponseType,
+  Role,
+} from '@prisma/client';
 import { userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -21,17 +28,26 @@ export class AssessmentCalculatorService {
 
   async recalculate(assessmentId: number, currentUser: CurrentUser): Promise<ReportGenerationResult> {
     const assessment = await this.prisma.assessment.findFirst({
-      // Security: scoring can only read/write assessments within caller tenant scope.
-      where: currentUser.role === Role.ADMIN
-        ? { id: assessmentId }
-        : {
-          id: assessmentId,
-          company: userCompanyScope(currentUser.sub),
-        },
+      where:
+        currentUser.role === Role.ADMIN
+          ? { id: assessmentId }
+          : {
+            id: assessmentId,
+            company: userCompanyScope(currentUser.sub),
+          },
       include: {
+        assignments: true,
         responses: {
           include: {
             question: {
+              select: {
+                id: true,
+                category: true,
+                responseType: true,
+                weight: true,
+              },
+            },
+            questionTemplate: {
               select: {
                 id: true,
                 category: true,
@@ -49,8 +65,34 @@ export class AssessmentCalculatorService {
       throw new ForbiddenException('You do not have access to this assessment');
     }
 
+    if (assessment.questionnaireTemplateId) {
+      return this.recalculateTemplateAssessment(assessmentId, assessment);
+    }
+
+    return this.recalculateLegacyAssessment(assessmentId, assessment);
+  }
+
+  private async recalculateLegacyAssessment(
+    assessmentId: number,
+    assessment: {
+      responses: Array<{
+        id: number;
+        questionId: number | null;
+        responseValue: string;
+        question: {
+          id: number;
+          category: QuestionCategory;
+          responseType: ResponseType;
+          weight: Prisma.Decimal;
+        } | null;
+      }>;
+    },
+  ): Promise<ReportGenerationResult> {
     const latestByQuestion = new Map<number, (typeof assessment.responses)[number]>();
     for (const response of assessment.responses) {
+      if (response.questionId == null || response.question == null) {
+        continue;
+      }
       const previous = latestByQuestion.get(response.questionId);
       if (!previous || response.id > previous.id) {
         latestByQuestion.set(response.questionId, response);
@@ -62,18 +104,110 @@ export class AssessmentCalculatorService {
     const categoryQuestionCounts = this.emptyCategoryAccumulator();
 
     for (const response of latestByQuestion.values()) {
+      const q = response.question!;
       const { score } = computeResponseScore(
-        response.question.responseType as ResponseType,
+        q.responseType as ResponseType,
         response.responseValue,
       );
-      const weight = Number(response.question.weight);
+      const weight = Number(q.weight);
       const weightedQuestionScore = (score / 100) * weight;
 
-      categoryWeightedScores[response.question.category] += weightedQuestionScore;
-      categoryWeights[response.question.category] += weight;
-      categoryQuestionCounts[response.question.category] += 1;
+      categoryWeightedScores[q.category] += weightedQuestionScore;
+      categoryWeights[q.category] += weight;
+      categoryQuestionCounts[q.category] += 1;
     }
 
+    return this.persistReportFromCategoryMath(
+      assessmentId,
+      categoryWeightedScores,
+      categoryWeights,
+      categoryQuestionCounts,
+    );
+  }
+
+  private async recalculateTemplateAssessment(
+    assessmentId: number,
+    assessment: {
+      assignments: Array<{ status: AssessmentAssignmentStatus; userId: string }>;
+      responses: Array<{
+        id: number;
+        questionTemplateId: number | null;
+        userId: string | null;
+        responseValue: string;
+        score: Prisma.Decimal;
+        questionTemplate: {
+          id: number;
+          category: QuestionCategory;
+          responseType: ResponseType;
+          weight: Prisma.Decimal;
+        } | null;
+      }>;
+    },
+  ): Promise<ReportGenerationResult> {
+    const pending = assessment.assignments.some((a) => a.status !== AssessmentAssignmentStatus.SUBMITTED);
+    if (pending) {
+      throw new BadRequestException(
+        'Cannot score template assessment until every collaborator has submitted',
+      );
+    }
+
+    const submittedUserIds = new Set(
+      assessment.assignments
+        .filter((a) => a.status === AssessmentAssignmentStatus.SUBMITTED)
+        .map((a) => a.userId),
+    );
+
+    const byTemplate = new Map<number, number[]>();
+    for (const r of assessment.responses) {
+      if (
+        r.questionTemplateId == null ||
+        r.questionTemplate == null ||
+        !r.userId ||
+        !submittedUserIds.has(r.userId)
+      ) {
+        continue;
+      }
+      const list = byTemplate.get(r.questionTemplateId) ?? [];
+      list.push(Number(r.score));
+      byTemplate.set(r.questionTemplateId, list);
+    }
+
+    const categoryWeightedScores = this.emptyCategoryAccumulator();
+    const categoryWeights = this.emptyCategoryAccumulator();
+    const categoryQuestionCounts = this.emptyCategoryAccumulator();
+
+    for (const [templateQuestionId, scores] of byTemplate) {
+      const sample = assessment.responses.find(
+        (r) => r.questionTemplateId === templateQuestionId && r.questionTemplate,
+      );
+      const qt = sample?.questionTemplate;
+      if (!qt || scores.length === 0) {
+        continue;
+      }
+
+      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const weight = Number(qt.weight);
+      const weightedQuestionScore = (avgScore / 100) * weight;
+
+      categoryWeightedScores[qt.category] += weightedQuestionScore;
+      categoryWeights[qt.category] += weight;
+      categoryQuestionCounts[qt.category] += 1;
+    }
+
+    return this.persistReportFromCategoryMath(
+      assessmentId,
+      categoryWeightedScores,
+      categoryWeights,
+      categoryQuestionCounts,
+    );
+  }
+
+  private async persistReportFromCategoryMath(
+    assessmentId: number,
+    categoryWeightedScores: Record<QuestionCategory, number>,
+    categoryWeights: Record<QuestionCategory, number>,
+    categoryQuestionCounts: Record<QuestionCategory, number>,
+  ): Promise<ReportGenerationResult> {
     const categoryScores = this.emptyCategoryAccumulator();
     for (const category of Object.values(QuestionCategory) as QuestionCategory[]) {
       if (categoryQuestionCounts[category] === 0 || categoryWeights[category] <= 0) {
@@ -81,7 +215,6 @@ export class AssessmentCalculatorService {
         continue;
       }
 
-      // Business rule: average weighted question scores and normalize to 0-100.
       categoryScores[category] = this.round2(
         (categoryWeightedScores[category] / categoryWeights[category]) * 100,
       );
@@ -89,7 +222,7 @@ export class AssessmentCalculatorService {
 
     const totalScore = this.round2(
       Object.values(categoryScores).reduce((acc, value) => acc + value, 0) /
-      Object.values(QuestionCategory).length,
+        Object.values(QuestionCategory).length,
     );
     const maturityLevel = this.maturityFromTotalScore(totalScore);
 
@@ -104,10 +237,7 @@ export class AssessmentCalculatorService {
     };
 
     const { strengths, weaknesses } = buildStrengthsAndWeaknesses(scoreForRecommendations);
-    const recommendations = buildRecommendations(
-      scoreForRecommendations,
-      weaknesses.length,
-    );
+    const recommendations = buildRecommendations(scoreForRecommendations, weaknesses.length);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.assessment.update({

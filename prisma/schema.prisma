@@ -66,6 +66,8 @@ model User {
   assignments UserCompanyAssignment[]
   questionsCreated Question[] @relation("QuestionCreator")
   questionVersionsChanged QuestionVersion[]
+  assessmentResponses     AssessmentResponse[]
+  assessmentAssignments   AssessmentAssignment[]
 }
 
 
@@ -127,6 +129,71 @@ model Question {
   versions  QuestionVersion[]
 }
 
+model QuestionnaireTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions   QuestionTemplate[]
+  assessments Assessment[]
+}
+
+model QuestionTemplate {
+  id                      Int              @id @default(autoincrement())
+  questionnaireTemplateId Int
+  text                    String
+  category                QuestionCategory
+  weight                  Decimal          @db.Decimal(3, 2)
+  responseType            ResponseType
+  evidenceRequired        Boolean          @default(false)
+  hint                    String?
+  sortOrder               Int              @default(0)
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  questionnaireTemplate QuestionnaireTemplate @relation(fields: [questionnaireTemplateId], references: [id], onDelete: Cascade)
+  options               QuestionTemplateOption[]
+  responses             AssessmentResponse[]
+
+  @@index([questionnaireTemplateId])
+}
+
+model QuestionTemplateOption {
+  id                 Int     @id @default(autoincrement())
+  questionTemplateId Int
+  label              String
+  /// Score on a 0–5 scale; normalized to 0–100 in the scoring engine.
+  scoreValue         Decimal @db.Decimal(4, 2)
+  sortOrder          Int     @default(0)
+
+  questionTemplate QuestionTemplate @relation(fields: [questionTemplateId], references: [id], onDelete: Cascade)
+
+  @@index([questionTemplateId])
+}
+
+enum AssessmentAssignmentStatus {
+  PENDING
+  SUBMITTED
+}
+
+model AssessmentAssignment {
+  id           Int                        @id @default(autoincrement())
+  assessmentId Int
+  userId       String                     @db.Uuid
+  status       AssessmentAssignmentStatus @default(PENDING)
+  submittedAt  DateTime?
+  createdAt    DateTime                   @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, userId])
+  @@index([userId])
+}
+
 
 
 model QuestionVersion {
@@ -148,6 +215,8 @@ model Assessment {
   id            Int              @id @default(autoincrement())
   companyId     Int
   assessorId    String           @db.Uuid
+  /// When set, questions come from this global template; scoring aggregates collaborator submissions.
+  questionnaireTemplateId Int?
   status        AssessmentStatus @default(NOT_STARTED)
   startedAt     DateTime?
   completedAt   DateTime?
@@ -156,8 +225,10 @@ model Assessment {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  company  Company @relation(fields: [companyId], references: [id])
-  assessor User    @relation("Assessor", fields: [assessorId], references: [id])
+  company                 Company                 @relation(fields: [companyId], references: [id])
+  assessor                User                    @relation("Assessor", fields: [assessorId], references: [id])
+  questionnaireTemplate   QuestionnaireTemplate?  @relation(fields: [questionnaireTemplateId], references: [id])
+  assignments             AssessmentAssignment[]
 
   responses AssessmentResponse[]
   report    Report?
@@ -166,22 +237,31 @@ model Assessment {
 
 
 model AssessmentResponse {
-  id                Int      @id @default(autoincrement())
-  assessmentId      Int
-  questionId        Int
-  questionVersion   Int
-  responseValue     String
-  score             Decimal  @db.Decimal(5, 2)
-  evidence          String?
-  evidenceFileUrl   String?
-  observation       String?
-  answeredAt        DateTime?
-  createdAt         DateTime @default(now())
+  id                 Int       @id @default(autoincrement())
+  assessmentId       Int
+  /// Legacy single-evaluator assessments (no template).
+  questionId         Int?
+  /// Template-based assessments: one row per (assessment, questionTemplate, user).
+  questionTemplateId Int?
+  userId             String?   @db.Uuid
+  questionVersion    Int
+  responseValue      String
+  score              Decimal   @db.Decimal(5, 2)
+  evidence           String?
+  evidenceFileUrl    String?
+  observation        String?
+  answeredAt         DateTime?
+  createdAt          DateTime  @default(now())
 
-  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  question   Question   @relation(fields: [questionId], references: [id])
+  assessment       Assessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question         Question?         @relation(fields: [questionId], references: [id])
+  questionTemplate QuestionTemplate? @relation(fields: [questionTemplateId], references: [id])
+  user             User?             @relation(fields: [userId], references: [id])
 
   evidenceFiles EvidenceFile[]
+
+  @@index([assessmentId, userId])
+  @@index([assessmentId, questionTemplateId])
 }
 
 

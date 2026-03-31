@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { ResponseType } from '@prisma/client';
+import { Prisma, ResponseType } from '@prisma/client';
 
 const YES_NO_VALUES = new Set(['YES', 'NO']);
 
@@ -43,4 +43,37 @@ export function computeResponseScore(
     return scoreScale(responseValue);
   }
   throw new BadRequestException(`Unsupported response type: ${responseType}`);
+}
+
+type TemplateOptionRow = { id: number; scoreValue: Prisma.Decimal };
+
+/**
+ * Template questions may define explicit options (0–5 scoreValue).
+ * `responseValue` must be the selected option id as a string.
+ */
+export function computeTemplateQuestionScore(
+  responseType: ResponseType,
+  options: TemplateOptionRow[],
+  responseValue: string,
+): { normalizedValue: string; score: number } {
+  const trimmed = responseValue.trim();
+  if (options.length > 0) {
+    const id = Number(trimmed);
+    if (!Number.isInteger(id)) {
+      throw new BadRequestException(
+        `OPTION-style response must be a numeric option id, got "${responseValue}"`,
+      );
+    }
+    const opt = options.find((o) => o.id === id);
+    if (!opt) {
+      throw new BadRequestException(`Invalid option id ${id} for this question`);
+    }
+    const raw = Number(opt.scoreValue);
+    if (!Number.isFinite(raw) || raw < 0 || raw > 5) {
+      throw new BadRequestException('Option scoreValue must be between 0 and 5');
+    }
+    const score = Math.round((raw / 5) * 100 * 100) / 100;
+    return { normalizedValue: String(id), score };
+  }
+  return computeResponseScore(responseType, trimmed);
 }

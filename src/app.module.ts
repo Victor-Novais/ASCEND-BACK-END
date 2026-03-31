@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { CompaniesModule } from './companies/companies.module';
 import { QuestionsModule } from './questions/questions.module';
 import { AssessmentsModule } from './assessments/assessments.module';
+import { QuestionnaireTemplatesModule } from './questionnaire-templates/questionnaire-templates.module';
 import { ReportModule } from './report/report.module';
 import { ScoreModule } from './score/score.module';
 
@@ -21,6 +22,7 @@ import { ScoreModule } from './score/score.module';
     AuthModule,
     CompaniesModule,
     QuestionsModule,
+    QuestionnaireTemplatesModule,
     AssessmentsModule,
   ],
   controllers: [AppController],

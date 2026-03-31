@@ -24,7 +24,7 @@ export class AssessmentsController {
   constructor(private readonly assessmentsService: AssessmentsService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   create(
     @Body() createAssessmentDto: CreateAssessmentDto,
     @CurrentUser() user: JwtPayload,
@@ -46,6 +46,16 @@ export class AssessmentsController {
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   submit(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.assessmentsService.submitAssessment(id, user);
+  }
+
+  /** Collaborator finalizes their answers; auto-closes and scores when everyone has submitted. */
+  @Post(':id/participant-submit')
+  @Roles(Role.COLLABORATOR)
+  submitParticipant(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.assessmentsService.submitParticipantAssessment(id, user);
   }
 
   @Get(':id')

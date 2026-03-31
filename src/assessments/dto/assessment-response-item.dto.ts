@@ -29,9 +29,17 @@ export class EvidenceFileItemDto {
 }
 
 export class AssessmentResponseItemDto {
+  /** Legacy assessments (no questionnaire template). */
+  @IsOptional()
   @IsInt()
   @Min(1)
-  questionId!: number;
+  questionId?: number;
+
+  /** Template-based assessments; mutually exclusive with questionId. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  questionTemplateId?: number;
 
   @IsString()
   @MaxLength(500)
