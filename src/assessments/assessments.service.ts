@@ -26,6 +26,7 @@ import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { AssessmentCalculatorService } from './assessment-calculator.service';
 import { ReportService } from '../report/report.service';
 import { computeAssessmentQuestionScore, computeResponseScore } from './utils/response-scoring';
+import { getMaturity, mapMaturityLabelToEnum } from './utils/maturity';
 
 type AssessmentWithRelations = Assessment & {
   company: {
@@ -836,6 +837,101 @@ export class AssessmentsService {
     return {
       ...report,
       payload,
+    };
+  }
+
+  async finishAssessment(id: number, currentUser: JwtPayload) {
+    if (currentUser.role !== Role.COLLABORATOR) {
+      throw new ForbiddenException('Only collaborators can finish assessments');
+    }
+
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhereForUser(id, { id: currentUser.sub, role: currentUser.role }),
+      include: {
+        questions: {
+          include: {
+            options: true,
+          },
+        },
+        answers: {
+          where: { answeredBy: currentUser.sub },
+          include: {
+            selectedOption: true,
+          },
+        },
+      },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException('Assessment not found');
+    }
+
+    if (assessment.status === AssessmentStatus.COMPLETED) {
+      throw new BadRequestException('Assessment already completed');
+    }
+
+    if (assessment.questions.length === 0) {
+      throw new BadRequestException('Assessment has no questions');
+    }
+
+    const answerByQuestionId = new Map<number, (typeof assessment.answers)[number]>();
+    for (const answer of assessment.answers) {
+      if (!answerByQuestionId.has(answer.assessmentQuestionId)) {
+        answerByQuestionId.set(answer.assessmentQuestionId, answer);
+      }
+    }
+
+    if (answerByQuestionId.size !== assessment.questions.length) {
+      throw new BadRequestException('All assessment questions must be answered before finishing');
+    }
+
+    let totalScore = 0;
+    let maxScore = 0;
+    const categoryScores: Record<string, { total: number; max: number; percentage: number }> = {};
+
+    for (const question of assessment.questions) {
+      const answer = answerByQuestionId.get(question.id);
+      if (!answer) {
+        throw new BadRequestException(`Missing answer for question ${question.id}`);
+      }
+
+      const selectedWeight = answer.selectedOption.weight;
+      const maxWeight = question.options.reduce((acc, option) => Math.max(acc, option.weight), 0);
+
+      totalScore += selectedWeight;
+      maxScore += maxWeight;
+
+      const category = question.category ?? 'UNCATEGORIZED';
+      if (!categoryScores[category]) {
+        categoryScores[category] = { total: 0, max: 0, percentage: 0 };
+      }
+      categoryScores[category].total += selectedWeight;
+      categoryScores[category].max += maxWeight;
+    }
+
+    const score = maxScore > 0 ? Number(((totalScore / maxScore) * 100).toFixed(2)) : 0;
+
+    for (const category of Object.keys(categoryScores)) {
+      const bucket = categoryScores[category];
+      bucket.percentage = bucket.max > 0 ? Number(((bucket.total / bucket.max) * 100).toFixed(2)) : 0;
+    }
+
+    const maturityLevel = getMaturity(score);
+
+    await this.prisma.assessment.update({
+      where: { id },
+      data: {
+        score,
+        maturityLevel: mapMaturityLabelToEnum(maturityLevel),
+        status: AssessmentStatus.COMPLETED,
+        completedAt: new Date(),
+      },
+    });
+
+    return {
+      score,
+      maturityLevel,
+      categoryScores,
     };
   }
 

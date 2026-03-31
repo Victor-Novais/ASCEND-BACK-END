@@ -219,6 +219,7 @@ model Assessment {
   status        AssessmentStatus @default(NOT_STARTED)
   startedAt     DateTime?
   completedAt   DateTime?
+  score         Float?
   totalScore    Decimal?         @db.Decimal(5, 2)
   maturityLevel MaturityLevel?
   createdAt     DateTime         @default(now())
