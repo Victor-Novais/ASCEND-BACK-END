@@ -13,6 +13,7 @@ enum Role {
   ADMIN
   AVALIADOR
   CLIENTE
+  COLLABORATOR
 }
 
 enum CompanySize {
@@ -71,6 +72,7 @@ model User {
 
 model Company {
   id                 Int          @id @default(autoincrement())
+  companyCode        String       @unique
   name               String
   segment            String
   size               CompanySize?

@@ -24,7 +24,7 @@ export class AssessmentsController {
   constructor(private readonly assessmentsService: AssessmentsService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   create(
     @Body() createAssessmentDto: CreateAssessmentDto,
     @CurrentUser() user: JwtPayload,
@@ -33,7 +33,7 @@ export class AssessmentsController {
   }
 
   @Put(':id/responses')
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   upsertResponses(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: BulkAssessmentResponsesDto,
@@ -43,19 +43,19 @@ export class AssessmentsController {
   }
 
   @Post(':id/submit')
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   submit(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.assessmentsService.submitAssessment(id, user);
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.assessmentsService.findOne(id, user);
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findAll(@CurrentUser() user: JwtPayload) {
     return this.assessmentsService.findAll(user);
   }

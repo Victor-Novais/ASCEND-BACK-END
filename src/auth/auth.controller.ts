@@ -24,15 +24,9 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   @Get('me')
-  me(
-    @CurrentUser() user: JwtPayload,
-  ): { id: string; email: string; role: Role } {
-    return {
-      id: user.sub,
-      email: user.email,
-      role: user.role,
-    };
+  me(@CurrentUser() user: JwtPayload) {
+    return this.authService.getProfile(user.sub);
   }
 }

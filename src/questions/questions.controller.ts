@@ -19,13 +19,13 @@ export class QuestionsController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findAll() {
     return this.questionsService.findAll();
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.questionsService.findOne(id);
   }

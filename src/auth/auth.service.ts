@@ -8,9 +8,11 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { CompaniesService } from '../companies/companies.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RegisterUserType } from './dto/register-user-type.enum';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 
 interface AuthUser {
@@ -24,6 +26,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly companiesService: CompaniesService,
   ) {}
 
   async login(loginDto: LoginDto): Promise<{ accessToken: string }> {
@@ -50,12 +53,6 @@ export class AuthService {
     };
     accessToken: string;
   }> {
-    const desiredRole = registerDto.role ?? Role.CLIENTE;
-
-    if (desiredRole === Role.ADMIN) {
-      throw new BadRequestException('Registration as ADMIN is not allowed');
-    }
-
     const existingUser = await this.prisma.user.findUnique({
       where: { email: registerDto.email },
       select: { id: true },
@@ -66,6 +63,81 @@ export class AuthService {
     }
 
     const passwordHash = await this.hashPassword(registerDto.password);
+
+    const userType = registerDto.userType;
+
+    if (userType === RegisterUserType.COLLABORATOR) {
+      if (!registerDto.companyCode?.trim()) {
+        throw new BadRequestException('companyCode is required for COLLABORATOR');
+      }
+      const company = await this.companiesService.findCompanyByCode(registerDto.companyCode);
+      if (!company) {
+        throw new BadRequestException('Invalid company code');
+      }
+
+      const createdUser = await this.prisma.user.create({
+        data: {
+          id: randomUUID(),
+          name: registerDto.name,
+          email: registerDto.email,
+          passwordHash,
+          role: Role.COLLABORATOR,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          createdAt: true,
+        },
+      });
+
+      await this.prisma.userCompanyAssignment.create({
+        data: {
+          userId: createdUser.id,
+          companyId: company.id,
+        },
+      });
+
+      return this.buildRegisterResponse(createdUser);
+    }
+
+    if (userType === RegisterUserType.CLIENTE) {
+      const createdUser = await this.prisma.user.create({
+        data: {
+          id: randomUUID(),
+          name: registerDto.name,
+          email: registerDto.email,
+          passwordHash,
+          role: Role.CLIENTE,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          createdAt: true,
+        },
+      });
+
+      if (registerDto.company) {
+        await this.companiesService.createCompanyForNewOwner(createdUser.id, registerDto.company);
+      }
+
+      return this.buildRegisterResponse(createdUser);
+    }
+
+    const desiredRole = registerDto.role ?? Role.CLIENTE;
+
+    if (desiredRole === Role.ADMIN) {
+      throw new BadRequestException('Registration as ADMIN is not allowed');
+    }
+
+    if (desiredRole === Role.COLLABORATOR) {
+      throw new BadRequestException(
+        'COLLABORATOR registration requires userType COLLABORATOR and a valid companyCode',
+      );
+    }
 
     const createdUser = await this.prisma.user.create({
       data: {
@@ -85,7 +157,29 @@ export class AuthService {
     });
 
     if (!createdUser.name) {
-      // Garantia defensiva: `RegisterDto.name` é obrigatório.
+      throw new BadRequestException('Invalid user name');
+    }
+
+    return this.buildRegisterResponse(createdUser);
+  }
+
+  private async buildRegisterResponse(createdUser: {
+    id: string;
+    name: string | null;
+    email: string;
+    role: Role;
+    createdAt: Date;
+  }): Promise<{
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: Role;
+      createdAt: Date;
+    };
+    accessToken: string;
+  }> {
+    if (!createdUser.name) {
       throw new BadRequestException('Invalid user name');
     }
 
@@ -111,6 +205,31 @@ export class AuthService {
 
   async hashPassword(plainPassword: string): Promise<string> {
     return bcrypt.hash(plainPassword, 12);
+  }
+
+  async getProfile(userId: string): Promise<{
+    id: string;
+    name: string | null;
+    email: string;
+    role: Role;
+    createdAt: Date;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return user;
   }
 
   async validateUserCredentials(email: string, password: string): Promise<AuthUser> {

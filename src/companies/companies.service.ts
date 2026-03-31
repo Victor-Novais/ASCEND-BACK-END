@@ -1,8 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Assessment, Company, Prisma, Role } from '@prisma/client';
+import { RegisterCompanyDto } from '../auth/dto/register-company.dto';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { companyWhereForUser, isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizeCompanyCode, randomCompanyCodeSegment } from './company-code.utils';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 
@@ -35,15 +37,61 @@ type CompanyWithRelations = Company & {
 export class CompaniesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Lookup by invitation code (normalized to uppercase). Used at COLLABORATOR signup.
+   */
+  async findCompanyByCode(code: string): Promise<Company | null> {
+    const companyCode = normalizeCompanyCode(code);
+    if (!companyCode) {
+      return null;
+    }
+    return this.prisma.company.findUnique({
+      where: { companyCode },
+    });
+  }
+
+  /**
+   * Registration path: create company for a newly created CLIENTE owner (JWT not yet available for HTTP create).
+   */
+  async createCompanyForNewOwner(
+    ownerId: string,
+    dto: RegisterCompanyDto,
+  ): Promise<CompanyWithRelations> {
+    const syntheticUser: JwtPayload = {
+      sub: ownerId,
+      email: '',
+      role: Role.CLIENTE,
+    };
+    const createCompanyDto: CreateCompanyDto = {
+      name: dto.name,
+      segment: dto.segment,
+      size: dto.size,
+      responsible: dto.responsible,
+      responsibleEmail: dto.responsibleEmail,
+      responsiblePhone: dto.responsiblePhone,
+      cnpj: dto.cnpj,
+      address: dto.address,
+      evaluatorIds: dto.evaluatorIds,
+    };
+    return this.create(createCompanyDto, syntheticUser);
+  }
+
   async create(
     createCompanyDto: CreateCompanyDto,
     currentUser: JwtPayload,
   ): Promise<CompanyWithRelations> {
+    if (currentUser.role === Role.COLLABORATOR) {
+      throw new ForbiddenException('Collaborators cannot create companies');
+    }
+
     const evaluatorIds = createCompanyDto.evaluatorIds ?? [];
     await this.validateEvaluatorIds(evaluatorIds);
 
+    const companyCode = await this.allocateUniqueCompanyCode();
+
     const company = await this.prisma.company.create({
       data: {
+        companyCode,
         name: createCompanyDto.name,
         segment: createCompanyDto.segment,
         size: createCompanyDto.size,
@@ -119,11 +167,19 @@ export class CompaniesService {
       });
 
       if (evaluatorIds) {
+        const companyRow = await tx.company.findUnique({
+          where: { id },
+          select: { createdById: true },
+        });
+        const merged = new Set(evaluatorIds);
+        if (companyRow?.createdById) {
+          merged.add(companyRow.createdById);
+        }
         await tx.userCompanyAssignment.deleteMany({ where: { companyId: id } });
 
-        if (evaluatorIds.length > 0) {
+        if (merged.size > 0) {
           await tx.userCompanyAssignment.createMany({
-            data: evaluatorIds.map((userId) => ({
+            data: [...merged].map((userId) => ({
               userId,
               companyId: id,
             })),
@@ -150,6 +206,20 @@ export class CompaniesService {
     if (!exists) {
       throw new ForbiddenException('You do not have access to this company');
     }
+  }
+
+  private async allocateUniqueCompanyCode(): Promise<string> {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const companyCode = randomCompanyCodeSegment(8);
+      const clash = await this.prisma.company.findUnique({
+        where: { companyCode },
+        select: { id: true },
+      });
+      if (!clash) {
+        return companyCode;
+      }
+    }
+    throw new BadRequestException('Could not generate a unique company code');
   }
 
   private async validateEvaluatorIds(evaluatorIds: string[]): Promise<void> {

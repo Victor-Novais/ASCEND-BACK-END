@@ -24,13 +24,13 @@ export class CompaniesController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findAll(@CurrentUser() user: JwtPayload) {
     return this.companiesService.findAll(user);
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
     return this.companiesService.findOne(id, user);
   }
