@@ -90,7 +90,7 @@ export class QuestionnaireTemplatesService {
 
     // eslint-disable-next-line no-console
     console.log('TEMPLATES RESPONSE:', {
-      count: response.count,
+      count: templates.length,
     });
 
     return response;
