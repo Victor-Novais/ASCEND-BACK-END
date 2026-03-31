@@ -64,6 +64,12 @@ export class AssessmentsController {
     return this.assessmentsService.findOne(id, user);
   }
 
+  @Get('my')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
+  findMy(@CurrentUser() user: JwtPayload) {
+    return this.assessmentsService.findMy(user);
+  }
+
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findAll(@CurrentUser() user: JwtPayload) {

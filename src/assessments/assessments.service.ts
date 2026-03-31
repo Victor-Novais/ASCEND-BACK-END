@@ -112,30 +112,15 @@ export class AssessmentsService {
       throw new ForbiddenException('Collaborators cannot create assessments');
     }
 
-    if (createAssessmentDto.questionnaireTemplateId != null) {
-      return this.createTemplateAssessment(createAssessmentDto, currentUser);
+    if (createAssessmentDto.questionnaireTemplateId == null) {
+      throw new BadRequestException(
+        'Only template-based assessments are supported (questionnaireTemplateId is required)',
+      );
     }
 
-    await this.ensureCompanyAccess(createAssessmentDto.companyId, currentUser);
-    const assessorId = createAssessmentDto.assessorId ?? currentUser.sub;
-    await this.ensureAssessorExists(assessorId);
-
-    const assessment = await this.prisma.assessment.create({
-      data: {
-        companyId: createAssessmentDto.companyId,
-        assessorId,
-        status: createAssessmentDto.status ?? AssessmentStatus.NOT_STARTED,
-        startedAt: createAssessmentDto.startedAt ? new Date(createAssessmentDto.startedAt) : undefined,
-        completedAt: createAssessmentDto.completedAt ? new Date(createAssessmentDto.completedAt) : undefined,
-      },
-    });
-
-    await this.assessmentCalculator.recalculate(assessment.id, {
-      sub: currentUser.sub,
-      role: currentUser.role,
-    });
-
-    return this.findOne(assessment.id, currentUser);
+    // Contract: assessments must always be tied to a global questionnaire template
+    // so the frontend can render questions/options deterministically.
+    return this.createTemplateAssessment(createAssessmentDto, currentUser);
   }
 
   private async createTemplateAssessment(
@@ -205,6 +190,78 @@ export class AssessmentsService {
     return rows.map((a) => this.maskAssessmentForViewer(a as AssessmentWithRelations, currentUser));
   }
 
+  /**
+   * Contract: `GET /assessments/my`
+   * - only assessments of the logged user
+   * - assignment status must be derived from the user's assignment + their answers
+   * - must not depend on global assessment status
+   */
+  async findMy(currentUser: JwtPayload): Promise<
+    Array<{
+      id: number;
+      company: { id: number; name: string; segment: string | null };
+      questionnaireTemplateId: number | null;
+      questionnaireTemplate: { id: number; name: string; description: string | null } | null;
+      createdAt: Date;
+      startedAt: Date | null;
+      completedAt: Date | null;
+      assignment: {
+        id: number;
+        status: 'ASSIGNED' | 'IN_PROGRESS' | 'SUBMITTED';
+        submittedAt: Date | null;
+      };
+    }>
+  > {
+    const rows = await this.prisma.assessment.findMany({
+      where: {
+        company: userCompanyScope(currentUser.sub),
+        assignments: { some: { userId: currentUser.sub } },
+      },
+      include: {
+        company: { select: { id: true, name: true, segment: true } },
+        questionnaireTemplate: {
+          select: { id: true, name: true, description: true },
+        },
+        assignments: {
+          where: { userId: currentUser.sub },
+          select: { id: true, status: true, submittedAt: true },
+        },
+        responses: {
+          where: { userId: currentUser.sub },
+          select: { id: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return rows.map((a) => {
+      const assignment = a.assignments[0];
+      const hasAnyResponses = a.responses.length > 0;
+
+      const assignmentStatus: 'ASSIGNED' | 'IN_PROGRESS' | 'SUBMITTED' =
+        assignment.status === AssessmentAssignmentStatus.SUBMITTED
+          ? 'SUBMITTED'
+          : hasAnyResponses
+            ? 'IN_PROGRESS'
+            : 'ASSIGNED';
+
+      return {
+        id: a.id,
+        company: a.company,
+        questionnaireTemplateId: a.questionnaireTemplateId,
+        questionnaireTemplate: a.questionnaireTemplate,
+        createdAt: a.createdAt,
+        startedAt: a.startedAt,
+        completedAt: a.completedAt,
+        assignment: {
+          id: assignment.id,
+          status: assignmentStatus,
+          submittedAt: assignment.submittedAt,
+        },
+      };
+    });
+  }
+
   async findOne(id: number, currentUser: JwtPayload): Promise<AssessmentWithRelations> {
     const assessment = await this.prisma.assessment.findFirst({
       where: assessmentWhereForUser(id, { id: currentUser.sub, role: currentUser.role }),
@@ -215,7 +272,8 @@ export class AssessmentsService {
       throw new ForbiddenException('You do not have access to this assessment');
     }
 
-    return this.maskAssessmentForViewer(assessment as AssessmentWithRelations, currentUser);
+    const masked = this.maskAssessmentForViewer(assessment as AssessmentWithRelations, currentUser);
+    return this.normalizeAssessmentForContract(masked, currentUser);
   }
 
   async submitParticipantAssessment(
@@ -379,23 +437,32 @@ export class AssessmentsService {
       throw new BadRequestException('Cannot modify answers after submission');
     }
 
-    for (const r of dto.responses) {
+    // Contract: frontend can send `questionId` as an alias for `questionTemplateId` (template question ids).
+    const normalizedResponses = dto.responses.map((r) => {
       const hasQ = r.questionId != null;
       const hasT = r.questionTemplateId != null;
-      if (hasQ === hasT) {
+      if (hasQ && hasT) {
         throw new BadRequestException(
           'Each response must set exactly one of questionId or questionTemplateId',
         );
       }
-      if (r.questionTemplateId == null) {
+      if (!hasQ && !hasT) {
         throw new BadRequestException(
-          'Template assessments only accept questionTemplateId references',
+          'Each response must set questionId (alias) or questionTemplateId',
         );
       }
-    }
+
+      const questionTemplateId = (r.questionTemplateId ?? r.questionId)!;
+
+      return {
+        ...r,
+        questionTemplateId,
+        questionId: undefined,
+      };
+    });
 
     const templateQuestionIds = new Set<number>();
-    for (const r of dto.responses) {
+    for (const r of normalizedResponses) {
       if (templateQuestionIds.has(r.questionTemplateId!)) {
         throw new BadRequestException(
           `Duplicate questionTemplateId ${r.questionTemplateId} in the same request`,
@@ -423,7 +490,7 @@ export class AssessmentsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      for (const item of dto.responses) {
+      for (const item of normalizedResponses) {
         const q = tById.get(item.questionTemplateId!)!;
         this.assertEvidenceSatisfied(q.evidenceRequired, item, item.questionTemplateId!);
 
@@ -869,11 +936,107 @@ export class AssessmentsService {
       include: {
         questions: {
           orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
-          include: {
-            options: { orderBy: { sortOrder: 'asc' as const } },
+          select: {
+            id: true,
+            text: true,
+            category: true,
+            weight: true,
+            responseType: true,
+            sortOrder: true,
+            options: {
+              orderBy: { sortOrder: 'asc' as const },
+              select: {
+                id: true,
+                label: true,
+                scoreValue: true,
+                sortOrder: true,
+              },
+            },
           },
         },
       },
     },
   } satisfies Prisma.AssessmentInclude;
+
+  private decimalToNumber(value: unknown): number {
+    if (value == null) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    const maybeDecimal = value as { toNumber?: () => number };
+    if (typeof maybeDecimal?.toNumber === 'function') {
+      const n = maybeDecimal.toNumber();
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    const n = Number(value as any);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  private normalizeQuestionnaireTemplateForContract(template: any): any {
+    if (!template?.questions) return template;
+
+    return {
+      ...template,
+      questions: template.questions.map((q: any) => ({
+        ...q,
+        weight: this.decimalToNumber(q.weight),
+        options: Array.isArray(q.options)
+          ? q.options.map((o: any) => ({
+              ...o,
+              score: this.decimalToNumber(o.scoreValue),
+            }))
+          : q.options,
+      })),
+    };
+  }
+
+  private normalizeAssessmentForContract(assessment: any, currentUser: JwtPayload): any {
+    // Contract: frontend expects the "closed" concept after finalization.
+    if (assessment?.status === AssessmentStatus.SUBMITTED) {
+      assessment.status = 'CLOSED';
+    }
+
+    if (assessment?.questionnaireTemplate) {
+      assessment.questionnaireTemplate =
+        this.normalizeQuestionnaireTemplateForContract(assessment.questionnaireTemplate);
+    }
+
+    if (currentUser.role === Role.COLLABORATOR && Array.isArray(assessment?.assignments)) {
+      const hasAnyResponses = Array.isArray(assessment?.responses) && assessment.responses.length > 0;
+
+      assessment.assignments = assessment.assignments.map((a: any) => ({
+        ...a,
+        status:
+          a.status === AssessmentAssignmentStatus.SUBMITTED
+            ? 'SUBMITTED'
+            : hasAnyResponses
+              ? 'IN_PROGRESS'
+              : 'ASSIGNED',
+      }));
+    }
+
+    if (Array.isArray(assessment?.responses)) {
+      assessment.responses = assessment.responses.map((r: any) => {
+        const normalizedQuestionId = r.questionId ?? r.questionTemplateId ?? null;
+
+        return {
+          ...r,
+          questionId: normalizedQuestionId,
+          ...(r.questionTemplate
+            ? {
+                questionTemplate: this.normalizeQuestionnaireTemplateForContract(
+                  r.questionTemplate,
+                ),
+              }
+            : {}),
+        };
+      });
+    }
+
+    return assessment;
+  }
 }
