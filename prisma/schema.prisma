@@ -234,6 +234,7 @@ model Assessment {
 
   responses AssessmentResponse[]
   report    Report?
+  result    AssessmentResult?
   history   AssessmentHistory[]
 }
 
@@ -357,4 +358,15 @@ model AssessmentHistory {
 
   company    Company    @relation(fields: [companyId], references: [id])
   assessment Assessment @relation(fields: [assessmentId], references: [id])
+}
+
+model AssessmentResult {
+  id              Int      @id @default(autoincrement())
+  assessmentId    Int      @unique
+  totalScore      Float
+  categoryScores  Json
+  categoryWeights Json
+  createdAt       DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 }

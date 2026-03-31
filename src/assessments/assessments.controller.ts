@@ -70,6 +70,12 @@ export class AssessmentsController {
     return this.assessmentsService.findQuestions(id, user);
   }
 
+  @Get(':id/result')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
+  getResult(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.assessmentsService.getResult(id, user);
+  }
+
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {

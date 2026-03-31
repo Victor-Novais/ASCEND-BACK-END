@@ -8,8 +8,8 @@ import {
   Assessment,
   AssessmentAssignmentStatus,
   AssessmentStatus,
-  MaturityLevel,
   Prisma,
+  ResponseType,
   Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -26,8 +26,9 @@ import { AssessmentResponseItemDto } from './dto/assessment-response-item.dto';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { AssessmentCalculatorService } from './assessment-calculator.service';
 import { ReportService } from '../report/report.service';
+import { ScoreService } from '../score/score.service';
+import { ScoreEngineItemInput } from '../score/score.types';
 import { computeAssessmentQuestionScore, computeResponseScore } from './utils/response-scoring';
-import { AssessmentScoringService } from './assessment-scoring.service';
 
 type AssessmentWithRelations = Assessment & {
   company: {
@@ -113,7 +114,7 @@ export class AssessmentsService {
     private readonly prisma: PrismaService,
     private readonly reportService: ReportService,
     private readonly assessmentCalculator: AssessmentCalculatorService,
-    private readonly assessmentScoringService: AssessmentScoringService,
+    private readonly scoreService: ScoreService,
   ) {}
 
   async create(
@@ -902,12 +903,9 @@ export class AssessmentsService {
   }
 
   async finalizeAssessment(assessmentId: number): Promise<{
-    score: number;
-    maturityLevel: MaturityLevel;
-    categories: Array<{ category: string; score: number }>;
-    strengths: string[];
-    weaknesses: string[];
-    recommendations: string[];
+    totalScore: number;
+    categoryScores: Record<string, number>;
+    categoryWeights: Record<string, number>;
   }> {
     const assessment = await this.prisma.assessment.findUnique({
       where: { id: assessmentId },
@@ -952,39 +950,109 @@ export class AssessmentsService {
       );
     }
 
-    const scoringInput = assessment.questions.map((question) => {
+    const scoringItems: ScoreEngineItemInput[] = assessment.questions.map((question) => {
       const answer = uniqueByQuestion.get(question.id);
       if (!answer) {
         throw new BadRequestException(`Missing answer for question ${question.id}`);
       }
-      const maxWeight = Math.max(
-        5,
-        ...question.options.map((option) => option.weight),
-      );
+
       return {
-        assessmentQuestionId: question.id,
-        category: question.category ?? 'UNCATEGORIZED',
-        selectedWeight: answer.selectedOption.weight,
-        maxWeight,
+        questionId: question.id,
+        category: (question.category ?? 'GOVERNANCA') as ScoreEngineItemInput['category'],
+        responseType: question.responseType,
+        responseValue: this.mapSelectedOptionToScoreValue(
+          question.responseType,
+          answer.selectedOption.weight,
+          answer.selectedOption.text,
+        ),
+        weight: Number(question.weight),
       };
     });
 
-    const result = this.assessmentScoringService.compute(scoringInput);
+    if (scoringItems.length === 0) {
+      throw new BadRequestException('Cannot finalize assessment without answers');
+    }
+
+    const scoreResult = this.scoreService.compute({ items: scoringItems });
 
     await this.prisma.assessment.update({
       where: { id: assessmentId },
       data: {
-        score: result.score,
-        totalScore: new Prisma.Decimal(result.score),
-        maturityLevel: result.maturityLevel,
+        score: scoreResult.totalScore,
+        totalScore: new Prisma.Decimal(scoreResult.totalScore),
         status: AssessmentStatus.COMPLETED,
         completedAt: new Date(),
       },
     });
 
-    await this.reportService.upsertFromAssessmentFinalize(assessmentId, result);
+    await this.prisma.assessmentResult.upsert({
+      where: { assessmentId },
+      create: {
+        assessmentId,
+        totalScore: scoreResult.totalScore,
+        categoryScores: scoreResult.categoryScores as unknown as Prisma.InputJsonValue,
+        categoryWeights: scoreResult.categoryWeights as unknown as Prisma.InputJsonValue,
+      },
+      update: {
+        totalScore: scoreResult.totalScore,
+        categoryScores: scoreResult.categoryScores as unknown as Prisma.InputJsonValue,
+        categoryWeights: scoreResult.categoryWeights as unknown as Prisma.InputJsonValue,
+      },
+    });
 
-    return result;
+    return {
+      totalScore: scoreResult.totalScore,
+      categoryScores: scoreResult.categoryScores,
+      categoryWeights: scoreResult.categoryWeights,
+    };
+  }
+
+  async getResult(assessmentId: number, currentUser: JwtPayload): Promise<{
+    totalScore: number;
+    categoryScores: Record<string, number>;
+    categoryWeights: Record<string, number>;
+  }> {
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhereForUser(assessmentId, { id: currentUser.sub, role: currentUser.role }),
+      select: { id: true },
+    });
+    if (!assessment) {
+      throw new ForbiddenException('You do not have access to this assessment');
+    }
+
+    const result = await this.prisma.assessmentResult.findUnique({
+      where: { assessmentId },
+    });
+    if (!result) {
+      throw new NotFoundException('Assessment result has not been generated yet');
+    }
+
+    return {
+      totalScore: result.totalScore,
+      categoryScores: result.categoryScores as Record<string, number>,
+      categoryWeights: result.categoryWeights as Record<string, number>,
+    };
+  }
+
+  private mapSelectedOptionToScoreValue(
+    responseType: ResponseType,
+    selectedWeight: number,
+    selectedText: string,
+  ): string {
+    if (responseType === ResponseType.SCALE) {
+      const value0to10 = Math.max(0, Math.min(10, Math.round(selectedWeight * 2)));
+      return String(value0to10);
+    }
+
+    if (responseType === ResponseType.YES_NO) {
+      const normalizedText = selectedText.trim().toUpperCase();
+      if (normalizedText === 'YES' || normalizedText === 'NO') {
+        return normalizedText;
+      }
+      return selectedWeight > 0 ? 'YES' : 'NO';
+    }
+
+    return String(selectedWeight);
   }
 
   private maskAssessmentForViewer(
