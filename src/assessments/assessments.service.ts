@@ -272,6 +272,12 @@ export class AssessmentsService {
       throw new ForbiddenException('You do not have access to this assessment');
     }
 
+    if (assessment.questionnaireTemplateId == null || !assessment.questionnaireTemplate) {
+      throw new BadRequestException(
+        'This assessment is not template-based; questionnaireTemplate is required for the contract',
+      );
+    }
+
     const masked = this.maskAssessmentForViewer(assessment as AssessmentWithRelations, currentUser);
     return this.normalizeAssessmentForContract(masked, currentUser);
   }
@@ -998,6 +1004,13 @@ export class AssessmentsService {
     // Contract: frontend expects the "closed" concept after finalization.
     if (assessment?.status === AssessmentStatus.SUBMITTED) {
       assessment.status = 'CLOSED';
+    }
+
+    // Contract: answers must be only for the logged user.
+    if (Array.isArray(assessment?.responses)) {
+      assessment.responses = assessment.responses.filter(
+        (r: any) => r.userId === currentUser.sub,
+      );
     }
 
     if (assessment?.questionnaireTemplate) {
