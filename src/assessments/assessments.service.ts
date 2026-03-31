@@ -8,6 +8,7 @@ import {
   Assessment,
   AssessmentAssignmentStatus,
   AssessmentStatus,
+  MaturityLevel,
   Prisma,
   Role,
 } from '@prisma/client';
@@ -26,7 +27,7 @@ import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { AssessmentCalculatorService } from './assessment-calculator.service';
 import { ReportService } from '../report/report.service';
 import { computeAssessmentQuestionScore, computeResponseScore } from './utils/response-scoring';
-import { getMaturity, mapMaturityLabelToEnum } from './utils/maturity';
+import { AssessmentScoringService } from './assessment-scoring.service';
 
 type AssessmentWithRelations = Assessment & {
   company: {
@@ -112,6 +113,7 @@ export class AssessmentsService {
     private readonly prisma: PrismaService,
     private readonly reportService: ReportService,
     private readonly assessmentCalculator: AssessmentCalculatorService,
+    private readonly assessmentScoringService: AssessmentScoringService,
   ) {}
 
   async create(
@@ -801,9 +803,14 @@ export class AssessmentsService {
     }
 
     if (assessment.responses.length === 0) {
-      throw new BadRequestException(
-        'Cannot submit an assessment without responses',
-      );
+      throw new BadRequestException('Cannot submit an assessment without responses');
+    }
+
+    if (
+      assessment.status !== AssessmentStatus.COMPLETED &&
+      assessment.status !== AssessmentStatus.SUBMITTED
+    ) {
+      await this.finalizeAssessment(id);
     }
 
     const wasSubmitted = assessment.status === AssessmentStatus.SUBMITTED;
@@ -818,10 +825,13 @@ export class AssessmentsService {
       });
     }
 
-    const payload = await this.assessmentCalculator.recalculate(id, {
-      sub: currentUser.sub,
-      role: currentUser.role,
-    });
+    const reportRow = await this.prisma.report.findUnique({ where: { assessmentId: id } });
+    const payload = reportRow
+      ? this.reportService.payloadFromPersisted(reportRow)
+      : await this.assessmentCalculator.recalculate(id, {
+          sub: currentUser.sub,
+          role: currentUser.role,
+        });
     const report = await this.prisma.report.findUnique({ where: { assessmentId: id } });
     if (!report) {
       throw new ForbiddenException('Unable to load generated report for this assessment');
@@ -866,8 +876,11 @@ export class AssessmentsService {
       throw new NotFoundException('Assessment not found');
     }
 
-    if (assessment.status === AssessmentStatus.COMPLETED) {
-      throw new BadRequestException('Assessment already completed');
+    if (
+      assessment.status === AssessmentStatus.COMPLETED ||
+      assessment.status === AssessmentStatus.SUBMITTED
+    ) {
+      throw new BadRequestException('Assessment already finalized');
     }
 
     if (assessment.questions.length === 0) {
@@ -885,54 +898,93 @@ export class AssessmentsService {
       throw new BadRequestException('All assessment questions must be answered before finishing');
     }
 
-    let totalScore = 0;
-    let maxScore = 0;
-    const categoryScores: Record<string, { total: number; max: number; percentage: number }> = {};
+    return this.finalizeAssessment(id);
+  }
 
-    for (const question of assessment.questions) {
-      const answer = answerByQuestionId.get(question.id);
+  async finalizeAssessment(assessmentId: number): Promise<{
+    score: number;
+    maturityLevel: MaturityLevel;
+    categories: Array<{ category: string; score: number }>;
+    strengths: string[];
+    weaknesses: string[];
+    recommendations: string[];
+  }> {
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id: assessmentId },
+      include: {
+        questions: {
+          include: {
+            options: true,
+          },
+        },
+        answers: {
+          include: {
+            assessmentQuestion: true,
+            selectedOption: true,
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        },
+      },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException('Assessment not found');
+    }
+
+    if (assessment.status === AssessmentStatus.SUBMITTED) {
+      throw new BadRequestException('Cannot finalize a submitted assessment');
+    }
+
+    if (assessment.questions.length === 0) {
+      throw new BadRequestException('Assessment has no questions');
+    }
+
+    const uniqueByQuestion = new Map<number, (typeof assessment.answers)[number]>();
+    for (const answer of assessment.answers) {
+      if (!uniqueByQuestion.has(answer.assessmentQuestionId)) {
+        uniqueByQuestion.set(answer.assessmentQuestionId, answer);
+      }
+    }
+
+    if (uniqueByQuestion.size !== assessment.questions.length) {
+      throw new BadRequestException(
+        'All assessment questions must be answered before finalization',
+      );
+    }
+
+    const scoringInput = assessment.questions.map((question) => {
+      const answer = uniqueByQuestion.get(question.id);
       if (!answer) {
         throw new BadRequestException(`Missing answer for question ${question.id}`);
       }
+      const maxWeight = Math.max(
+        5,
+        ...question.options.map((option) => option.weight),
+      );
+      return {
+        assessmentQuestionId: question.id,
+        category: question.category ?? 'UNCATEGORIZED',
+        selectedWeight: answer.selectedOption.weight,
+        maxWeight,
+      };
+    });
 
-      const selectedWeight = answer.selectedOption.weight;
-      const maxWeight = question.options.reduce((acc, option) => Math.max(acc, option.weight), 0);
-
-      totalScore += selectedWeight;
-      maxScore += maxWeight;
-
-      const category = question.category ?? 'UNCATEGORIZED';
-      if (!categoryScores[category]) {
-        categoryScores[category] = { total: 0, max: 0, percentage: 0 };
-      }
-      categoryScores[category].total += selectedWeight;
-      categoryScores[category].max += maxWeight;
-    }
-
-    const score = maxScore > 0 ? Number(((totalScore / maxScore) * 100).toFixed(2)) : 0;
-
-    for (const category of Object.keys(categoryScores)) {
-      const bucket = categoryScores[category];
-      bucket.percentage = bucket.max > 0 ? Number(((bucket.total / bucket.max) * 100).toFixed(2)) : 0;
-    }
-
-    const maturityLevel = getMaturity(score);
+    const result = this.assessmentScoringService.compute(scoringInput);
 
     await this.prisma.assessment.update({
-      where: { id },
+      where: { id: assessmentId },
       data: {
-        score,
-        maturityLevel: mapMaturityLabelToEnum(maturityLevel),
+        score: result.score,
+        totalScore: new Prisma.Decimal(result.score),
+        maturityLevel: result.maturityLevel,
         status: AssessmentStatus.COMPLETED,
         completedAt: new Date(),
       },
     });
 
-    return {
-      score,
-      maturityLevel,
-      categoryScores,
-    };
+    await this.reportService.upsertFromAssessmentFinalize(assessmentId, result);
+
+    return result;
   }
 
   private maskAssessmentForViewer(

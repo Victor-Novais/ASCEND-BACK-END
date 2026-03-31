@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   AssessmentStatus,
+  MaturityLevel,
   Prisma,
   QuestionCategory,
   Report,
@@ -14,6 +15,7 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { assessmentWhereForUser, isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { ScoreService } from '../score/score.service';
 import { ScoreEngineItemInput } from '../score/score.types';
+import { CategoryScoreItem } from '../assessments/assessment-scoring.service';
 import {
   ReportCategoryScoresJson,
   ReportGenerationResult,
@@ -44,6 +46,51 @@ export class ReportService {
       weaknesses: report.weaknesses as unknown as ReportWeaknessItem[],
       recommendations: report.recommendations as unknown as ReportRecommendationItem[],
     };
+  }
+
+  async upsertFromAssessmentFinalize(
+    assessmentId: number,
+    data: {
+      score: number;
+      maturityLevel: MaturityLevel;
+      categories: CategoryScoreItem[];
+      strengths: string[];
+      weaknesses: string[];
+      recommendations: string[];
+    },
+  ): Promise<void> {
+    const totalDecimal = new Prisma.Decimal(data.score);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.assessment.update({
+        where: { id: assessmentId },
+        data: {
+          totalScore: totalDecimal,
+          maturityLevel: data.maturityLevel,
+        },
+      });
+
+      await tx.report.upsert({
+        where: { assessmentId },
+        create: {
+          assessmentId,
+          totalScore: totalDecimal,
+          maturityLevel: data.maturityLevel,
+          categoryScores: data.categories as unknown as Prisma.InputJsonValue,
+          strengths: data.strengths as unknown as Prisma.InputJsonValue,
+          weaknesses: data.weaknesses as unknown as Prisma.InputJsonValue,
+          recommendations: data.recommendations as unknown as Prisma.InputJsonValue,
+        },
+        update: {
+          totalScore: totalDecimal,
+          maturityLevel: data.maturityLevel,
+          categoryScores: data.categories as unknown as Prisma.InputJsonValue,
+          strengths: data.strengths as unknown as Prisma.InputJsonValue,
+          weaknesses: data.weaknesses as unknown as Prisma.InputJsonValue,
+          recommendations: data.recommendations as unknown as Prisma.InputJsonValue,
+        },
+      });
+    });
   }
 
 

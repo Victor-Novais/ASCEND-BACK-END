@@ -2,11 +2,15 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { AssessmentStatus, Role } from '@prisma/client';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { AssessmentsService } from '../assessments/assessments.service';
 import { SubmitAnswersDto } from './dto/submit-answers.dto';
 
 @Injectable()
 export class AnswersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assessmentsService: AssessmentsService,
+  ) {}
 
   async submitAnswers(dto: SubmitAnswersDto, user: JwtPayload) {
     if (user.role !== Role.COLLABORATOR) {
@@ -30,6 +34,9 @@ export class AnswersService {
 
     if (assessment.status === AssessmentStatus.COMPLETED) {
       throw new BadRequestException('Assessment is completed');
+    }
+    if (assessment.status === AssessmentStatus.SUBMITTED) {
+      throw new BadRequestException('Assessment is submitted');
     }
 
     const seen = new Set<number>();
@@ -80,22 +87,26 @@ export class AnswersService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.answer.deleteMany({
-        where: {
-          assessmentId: dto.assessmentId,
-          answeredBy: user.sub,
-        },
-      });
-
-      await tx.answer.createMany({
-        data: dto.answers.map((item) => ({
-          assessmentId: dto.assessmentId,
-          assessmentQuestionId: item.assessmentQuestionId,
-          selectedOptionId: item.selectedOptionId,
-          answeredBy: user.sub,
-        })),
-        skipDuplicates: true,
-      });
+      for (const item of dto.answers) {
+        await tx.answer.upsert({
+          where: {
+            assessmentId_assessmentQuestionId_answeredBy: {
+              assessmentId: dto.assessmentId,
+              assessmentQuestionId: item.assessmentQuestionId,
+              answeredBy: user.sub,
+            },
+          },
+          create: {
+            assessmentId: dto.assessmentId,
+            assessmentQuestionId: item.assessmentQuestionId,
+            selectedOptionId: item.selectedOptionId,
+            answeredBy: user.sub,
+          },
+          update: {
+            selectedOptionId: item.selectedOptionId,
+          },
+        });
+      }
 
       if (assessment.status === AssessmentStatus.NOT_STARTED) {
         await tx.assessment.update({
@@ -108,10 +119,28 @@ export class AnswersService {
       }
     });
 
+    const [totalQuestions, answeredCount] = await Promise.all([
+      this.prisma.assessmentQuestion.count({
+        where: { assessmentId: dto.assessmentId },
+      }),
+      this.prisma.answer.count({
+        where: {
+          assessmentId: dto.assessmentId,
+          answeredBy: user.sub,
+        },
+      }),
+    ]);
+
+    let finalized: Awaited<ReturnType<AssessmentsService['finalizeAssessment']>> | null = null;
+    if (totalQuestions > 0 && answeredCount === totalQuestions) {
+      finalized = await this.assessmentsService.finalizeAssessment(dto.assessmentId);
+    }
+
     return {
       assessmentId: dto.assessmentId,
       answeredBy: user.sub,
       count: dto.answers.length,
+      finalized,
     };
   }
 }
