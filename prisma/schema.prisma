@@ -89,6 +89,7 @@ model User {
   assessmentResponses     AssessmentResponse[]
   assessmentAssignments   AssessmentAssignment[]
   actionPlans            ActionPlan[]
+  auditLogs              AuditLog[]
 }
 
 
@@ -423,4 +424,28 @@ model AssessmentResult {
   createdAt       DateTime @default(now())
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     String?  @db.Uuid
+  userEmail  String?
+  userRole   String?
+  action     String
+  entity     String?
+  entityId   String?
+  ipAddress  String?
+  userAgent  String?
+  payload    Json?
+  success    Boolean  @default(true)
+  errorMsg   String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([success])
+  @@index([createdAt])
 }

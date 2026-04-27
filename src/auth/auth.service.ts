@@ -8,6 +8,8 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { Request } from 'express';
+import { AuditService } from '../audit/audit.service';
 import { CompaniesService } from '../companies/companies.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -27,20 +29,58 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly companiesService: CompaniesService,
+    private readonly auditService: AuditService,
   ) {}
 
-  async login(loginDto: LoginDto): Promise<{ accessToken: string }> {
-    const user = await this.validateUserCredentials(loginDto.email, loginDto.password);
+  async login(
+    loginDto: LoginDto,
+    request?: Request,
+  ): Promise<{ accessToken: string }> {
+    try {
+      const user = await this.validateUserCredentials(loginDto.email, loginDto.password);
 
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    };
+      const payload: JwtPayload = {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+      };
 
-    const accessToken = await this.jwtService.signAsync(payload);
+      const accessToken = await this.jwtService.signAsync(payload);
 
-    return { accessToken };
+      await this.auditService.logSafe({
+        userId: user.id,
+        userEmail: user.email,
+        userRole: user.role,
+        action: 'LOGIN',
+        entity: 'Auth',
+        entityId: user.id,
+        ipAddress: this.extractIp(request),
+        userAgent: request?.headers['user-agent'],
+        payload: {
+          after: {
+            email: user.email,
+          },
+        },
+      });
+
+      return { accessToken };
+    } catch (error) {
+      await this.auditService.logSafe({
+        userEmail: loginDto.email,
+        action: 'LOGIN_FAILED',
+        entity: 'Auth',
+        ipAddress: this.extractIp(request),
+        userAgent: request?.headers['user-agent'],
+        success: false,
+        errorMsg: error instanceof Error ? error.message : 'Login failed',
+        payload: {
+          after: {
+            email: loginDto.email,
+          },
+        },
+      });
+      throw error;
+    }
   }
 
   async register(registerDto: RegisterDto): Promise<{
@@ -258,5 +298,13 @@ export class AuthService {
       email: user.email,
       role: user.role,
     };
+  }
+
+  private extractIp(request?: Request): string | undefined {
+    if (!request) {
+      return undefined;
+    }
+
+    return request.ip || request.socket?.remoteAddress || undefined;
   }
 }
