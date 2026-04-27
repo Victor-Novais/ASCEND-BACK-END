@@ -291,6 +291,8 @@ model Assessment {
   history   AssessmentHistory[]
   actionPlans ActionPlan[]
   risks       Risk[]
+
+  @@index([companyId, status])
 }
 
 model Risk {
@@ -459,6 +461,8 @@ model Report {
   generatedAt      DateTime @default(now())
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
 }
 
 

@@ -18,6 +18,7 @@ import { ActionPlansModule } from './action-plans/action-plans.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RisksModule } from './risks/risks.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RisksModule } from './risks/risks.module';
     AnswersModule,
     ActionPlansModule,
     RisksModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [
