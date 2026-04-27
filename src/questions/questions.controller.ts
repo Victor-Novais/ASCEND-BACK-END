@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Body, Controller, Delete, Get, Param, ParseEnumPipe, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { FrameworkType, Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -22,6 +22,18 @@ export class QuestionsController {
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
   findAll() {
     return this.questionsService.findAll();
+  }
+
+  @Get('framework-coverage')
+  @Roles(Role.ADMIN)
+  getFrameworkCoverage() {
+    return this.questionsService.getFrameworkCoverage();
+  }
+
+  @Get('framework/:type')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  findByFramework(@Param('type', new ParseEnumPipe(FrameworkType)) type: FrameworkType) {
+    return this.questionsService.findByFramework(type);
   }
 
   @Get(':id')

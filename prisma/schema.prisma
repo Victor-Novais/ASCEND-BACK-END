@@ -36,6 +36,13 @@ enum ResponseType {
   SCALE
 }
 
+enum FrameworkType {
+  COBIT
+  ITIL
+  ISO_27000
+  PROPRIO
+}
+
 enum AssessmentStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -116,6 +123,9 @@ model Question {
   category         QuestionCategory
   weight           Decimal           @db.Decimal(3, 2)
   responseType     ResponseType
+  frameworkType    FrameworkType?
+  frameworkRef     String?
+  frameworkNote    String?
   evidenceRequired Boolean
   hint             String?
   isActive         Boolean           @default(true)

@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Question, QuestionVersion, Role } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { FrameworkType, Prisma, Question, QuestionVersion, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -19,6 +19,8 @@ export class QuestionsService {
   constructor(private readonly prisma: PrismaService) { }
 
   async create(createQuestionDto: CreateQuestionDto): Promise<QuestionWithHistory> {
+    const frameworkData = this.resolveFrameworkData(createQuestionDto);
+
     const question = await this.prisma.question.create({
       data: {
         version: 1,
@@ -26,6 +28,9 @@ export class QuestionsService {
         category: createQuestionDto.category,
         weight: createQuestionDto.weight,
         responseType: createQuestionDto.responseType,
+        frameworkType: frameworkData.frameworkType,
+        frameworkRef: frameworkData.frameworkRef,
+        frameworkNote: frameworkData.frameworkNote,
         evidenceRequired: createQuestionDto.evidenceRequired,
         hint: createQuestionDto.hint,
         isActive: true,
@@ -67,6 +72,43 @@ export class QuestionsService {
     return question;
   }
 
+  async findByFramework(frameworkType: FrameworkType): Promise<QuestionWithHistory[]> {
+    return this.prisma.question.findMany({
+      where: {
+        isActive: true,
+        frameworkType,
+      },
+      include: this.defaultInclude,
+      orderBy: [{ category: 'asc' }, { updatedAt: 'desc' }],
+    });
+  }
+
+  async getFrameworkCoverage(): Promise<Record<FrameworkType, number> & { total: number }> {
+    const grouped = await this.prisma.question.groupBy({
+      by: ['frameworkType'],
+      where: { isActive: true },
+      _count: {
+        _all: true,
+      },
+    });
+
+    const coverage: Record<FrameworkType, number> & { total: number } = {
+      COBIT: 0,
+      ITIL: 0,
+      ISO_27000: 0,
+      PROPRIO: 0,
+      total: 0,
+    };
+
+    for (const item of grouped) {
+      const frameworkType = item.frameworkType ?? FrameworkType.PROPRIO;
+      coverage[frameworkType] += item._count._all;
+      coverage.total += item._count._all;
+    }
+
+    return coverage;
+  }
+
   async createNewVersion(id: number, updateQuestionDto: UpdateQuestionDto): Promise<QuestionWithHistory> {
     const existing = await this.prisma.question.findUnique({
       where: { id },
@@ -77,6 +119,7 @@ export class QuestionsService {
     }
 
     const nextVersion = existing.version + 1;
+    const frameworkData = this.resolveFrameworkData(updateQuestionDto, existing);
 
     await this.prisma.$transaction(async (tx) => {
 
@@ -98,6 +141,9 @@ export class QuestionsService {
           category: updateQuestionDto.category ?? existing.category,
           weight: updateQuestionDto.weight ?? existing.weight,
           responseType: updateQuestionDto.responseType ?? existing.responseType,
+          frameworkType: frameworkData.frameworkType,
+          frameworkRef: frameworkData.frameworkRef,
+          frameworkNote: frameworkData.frameworkNote,
           evidenceRequired: updateQuestionDto.evidenceRequired ?? existing.evidenceRequired,
           hint: updateQuestionDto.hint ?? existing.hint,
           isActive: true,
@@ -128,6 +174,34 @@ export class QuestionsService {
     if (!exists) {
       throw new NotFoundException(`Question with id '${id}' not found`);
     }
+  }
+
+  private resolveFrameworkData(
+    dto: Pick<CreateQuestionDto, 'frameworkType' | 'frameworkRef' | 'frameworkNote'>
+      | Pick<UpdateQuestionDto, 'frameworkType' | 'frameworkRef' | 'frameworkNote'>,
+    existing?: Pick<Question, 'frameworkType' | 'frameworkRef' | 'frameworkNote'>,
+  ): {
+    frameworkType: FrameworkType;
+    frameworkRef: string | null;
+    frameworkNote: string | null;
+  } {
+    const frameworkTypeWasProvided = dto.frameworkType !== undefined;
+    const frameworkRefWasProvided = dto.frameworkRef !== undefined;
+    const frameworkNoteWasProvided = dto.frameworkNote !== undefined;
+
+    const frameworkType = dto.frameworkType ?? existing?.frameworkType ?? FrameworkType.PROPRIO;
+    const frameworkRef = frameworkRefWasProvided ? dto.frameworkRef ?? null : existing?.frameworkRef ?? null;
+    const frameworkNote = frameworkNoteWasProvided ? dto.frameworkNote ?? null : existing?.frameworkNote ?? null;
+
+    if (frameworkTypeWasProvided && !frameworkRef?.trim()) {
+      throw new BadRequestException('frameworkRef is required when frameworkType is provided');
+    }
+
+    return {
+      frameworkType,
+      frameworkRef,
+      frameworkNote,
+    };
   }
 
   private readonly defaultInclude: Prisma.QuestionInclude = {
