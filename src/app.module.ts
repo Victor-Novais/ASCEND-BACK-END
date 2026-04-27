@@ -12,6 +12,7 @@ import { QuestionnaireTemplatesModule } from './questionnaire-templates/question
 import { ReportModule } from './report/report.module';
 import { ScoreModule } from './score/score.module';
 import { AnswersModule } from './answers/answers.module';
+import { ActionPlansModule } from './action-plans/action-plans.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AnswersModule } from './answers/answers.module';
     QuestionnaireTemplatesModule,
     AssessmentsModule,
     AnswersModule,
+    ActionPlansModule,
   ],
   controllers: [AppController],
   providers: [AppService],

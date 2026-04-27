@@ -43,6 +43,19 @@ enum FrameworkType {
   PROPRIO
 }
 
+enum ActionPlanStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum ActionPlanPriority {
+  ALTA
+  MEDIA
+  BAIXA
+}
+
 enum AssessmentStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -75,6 +88,7 @@ model User {
   questionVersionsChanged QuestionVersion[]
   assessmentResponses     AssessmentResponse[]
   assessmentAssignments   AssessmentAssignment[]
+  actionPlans            ActionPlan[]
 }
 
 
@@ -98,6 +112,7 @@ model Company {
   assessments Assessment[]
   assignments UserCompanyAssignment[]
   history     AssessmentHistory[]
+  actionPlans ActionPlan[]
 }
 
 
@@ -246,6 +261,35 @@ model Assessment {
   report    Report?
   result    AssessmentResult?
   history   AssessmentHistory[]
+  actionPlans ActionPlan[]
+}
+
+model ActionPlan {
+  id            Int                @id @default(autoincrement())
+  assessmentId  Int
+  companyId     Int
+  title         String
+  description   String
+  category      String
+  frameworkRef  String?
+  priority      ActionPlanPriority @default(MEDIA)
+  status        ActionPlanStatus   @default(PENDENTE)
+  responsibleId String?            @db.Uuid
+  dueDate       DateTime?
+  completedAt   DateTime?
+  observations  String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  assessment  Assessment @relation(fields: [assessmentId], references: [id])
+  company     Company    @relation(fields: [companyId], references: [id])
+  responsible User?      @relation(fields: [responsibleId], references: [id])
+
+  @@index([assessmentId])
+  @@index([companyId])
+  @@index([status])
+  @@index([priority])
+  @@index([responsibleId])
 }
 
 model AssessmentQuestion {
