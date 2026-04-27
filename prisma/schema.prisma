@@ -56,6 +56,30 @@ enum ActionPlanPriority {
   BAIXA
 }
 
+enum RiskProbability {
+  MUITO_BAIXA
+  BAIXA
+  MEDIA
+  ALTA
+  MUITO_ALTA
+}
+
+enum RiskImpact {
+  MUITO_BAIXO
+  BAIXO
+  MEDIO
+  ALTO
+  MUITO_ALTO
+}
+
+enum RiskStatus {
+  IDENTIFICADO
+  EM_TRATAMENTO
+  MITIGADO
+  ACEITO
+  TRANSFERIDO
+}
+
 enum AssessmentStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -90,6 +114,7 @@ model User {
   assessmentAssignments   AssessmentAssignment[]
   actionPlans            ActionPlan[]
   auditLogs              AuditLog[]
+  risks                  Risk[]
 }
 
 
@@ -114,6 +139,7 @@ model Company {
   assignments UserCompanyAssignment[]
   history     AssessmentHistory[]
   actionPlans ActionPlan[]
+  risks       Risk[]
 }
 
 
@@ -263,6 +289,39 @@ model Assessment {
   result    AssessmentResult?
   history   AssessmentHistory[]
   actionPlans ActionPlan[]
+  risks       Risk[]
+}
+
+model Risk {
+  id            Int             @id @default(autoincrement())
+  assessmentId  Int
+  companyId     Int
+  title         String
+  description   String
+  category      String
+  frameworkRef  String?
+  probability   RiskProbability
+  impact        RiskImpact
+  riskScore     Int
+  riskLevel     String
+  status        RiskStatus      @default(IDENTIFICADO)
+  treatment     String?
+  responsibleId String?         @db.Uuid
+  reviewDate    DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  assessment  Assessment @relation(fields: [assessmentId], references: [id])
+  company     Company    @relation(fields: [companyId], references: [id])
+  responsible User?      @relation(fields: [responsibleId], references: [id])
+
+  @@index([assessmentId])
+  @@index([companyId])
+  @@index([status])
+  @@index([riskLevel])
+  @@index([category])
+  @@index([responsibleId])
 }
 
 model ActionPlan {
