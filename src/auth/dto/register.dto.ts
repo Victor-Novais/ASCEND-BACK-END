@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   ValidateIf,
@@ -24,7 +25,11 @@ export class RegisterDto {
   email!: string;
 
   @IsString()
-  @MinLength(6)
+  @MinLength(8)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/, {
+    message:
+      'Senha deve ter mínimo 8 caracteres, com letra maiúscula, minúscula, número e símbolo especial',
+  })
   @MaxLength(128)
   password!: string;
 

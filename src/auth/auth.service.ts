@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Role } from '@prisma/client';
@@ -23,6 +24,11 @@ interface AuthUser {
   role: Role;
 }
 
+type TokenPair = {
+  accessToken: string;
+  refreshToken: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -30,22 +36,16 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly companiesService: CompaniesService,
     private readonly auditService: AuditService,
+    private readonly configService: ConfigService,
   ) {}
 
   async login(
     loginDto: LoginDto,
     request?: Request,
-  ): Promise<{ accessToken: string }> {
+  ): Promise<TokenPair> {
     try {
       const user = await this.validateUserCredentials(loginDto.email, loginDto.password);
-
-      const payload: JwtPayload = {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-      };
-
-      const accessToken = await this.jwtService.signAsync(payload);
+      const tokens = await this.issueTokenPair(user);
 
       await this.auditService.logSafe({
         userId: user.id,
@@ -63,7 +63,7 @@ export class AuthService {
         },
       });
 
-      return { accessToken };
+      return tokens;
     } catch (error) {
       await this.auditService.logSafe({
         userEmail: loginDto.email,
@@ -92,6 +92,7 @@ export class AuthService {
       createdAt: Date;
     };
     accessToken: string;
+    refreshToken: string;
   }> {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: registerDto.email },
@@ -218,18 +219,17 @@ export class AuthService {
       createdAt: Date;
     };
     accessToken: string;
+    refreshToken: string;
   }> {
     if (!createdUser.name) {
       throw new BadRequestException('Invalid user name');
     }
 
-    const payload: JwtPayload = {
-      sub: createdUser.id,
+    const tokens = await this.issueTokenPair({
+      id: createdUser.id,
       email: createdUser.email,
       role: createdUser.role,
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload);
+    });
 
     return {
       user: {
@@ -239,8 +239,85 @@ export class AuthService {
         role: createdUser.role,
         createdAt: createdUser.createdAt,
       },
-      accessToken,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
     };
+  }
+
+  async refresh(refreshToken: string): Promise<TokenPair> {
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!storedToken || storedToken.revoked) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (storedToken.expiresAt.getTime() <= Date.now()) {
+      await this.prisma.refreshToken.update({
+        where: { token: refreshToken },
+        data: { revoked: true },
+      });
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    try {
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
+        secret: this.getRefreshSecret(),
+      });
+      if (payload.sub !== storedToken.userId) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    await this.prisma.refreshToken.update({
+      where: { token: refreshToken },
+      data: { revoked: true },
+    });
+
+    return this.issueTokenPair(storedToken.user);
+  }
+
+  async logout(userId: string, refreshToken: string): Promise<{ message: string }> {
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+      select: {
+        token: true,
+        userId: true,
+        revoked: true,
+      },
+    });
+
+    if (!storedToken || storedToken.userId !== userId) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (!storedToken.revoked) {
+      await this.prisma.refreshToken.update({
+        where: { token: refreshToken },
+        data: { revoked: true },
+      });
+    }
+
+    await this.auditService.logSafe({
+      userId,
+      action: 'LOGOUT',
+      entity: 'Auth',
+      entityId: userId,
+    });
+
+    return { message: 'Logout realizado com sucesso' };
   }
 
   async hashPassword(plainPassword: string): Promise<string> {
@@ -306,5 +383,84 @@ export class AuthService {
     }
 
     return request.ip || request.socket?.remoteAddress || undefined;
+  }
+
+  private async issueTokenPair(user: AuthUser): Promise<TokenPair> {
+    const payload: JwtPayload = {
+      id: user.id,
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret: this.getAccessSecret(),
+      expiresIn: this.getAccessExpiry() as any,
+    });
+    const refreshToken = await this.jwtService.signAsync(payload, {
+      secret: this.getRefreshSecret(),
+      expiresIn: this.getRefreshExpiry() as any,
+    });
+
+    await this.prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + this.durationToMs(this.getRefreshExpiry())),
+      },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  private getAccessSecret(): string {
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET is not configured');
+    }
+    return secret;
+  }
+
+  private getRefreshSecret(): string {
+    const secret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    if (!secret) {
+      throw new Error('JWT_REFRESH_SECRET is not configured');
+    }
+    return secret;
+  }
+
+  private getAccessExpiry(): string {
+    return this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m';
+  }
+
+  private getRefreshExpiry(): string {
+    return this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+  }
+
+  private durationToMs(value: string): number {
+    const normalized = value.trim();
+    const match = normalized.match(/^(\d+)([smhd])$/i);
+
+    if (!match) {
+      const seconds = Number(normalized);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return seconds * 1000;
+      }
+      throw new Error(`Unsupported duration format: ${value}`);
+    }
+
+    const amount = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const multipliers: Record<string, number> = {
+      s: 1000,
+      m: 60_000,
+      h: 3_600_000,
+      d: 86_400_000,
+    };
+
+    return amount * multipliers[unit];
   }
 }

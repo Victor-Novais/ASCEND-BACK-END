@@ -1,12 +1,30 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+        },
+      },
+      hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+      frameguard: { action: 'deny' },
+      noSniff: true,
+      xssFilter: true,
+    } as any),
+  );
+  app.use(helmet.hidePoweredBy());
+
   app.enableCors({
-    origin: ['http://localhost:8080', 'http://127.0.0.1:8080', 'http://localhost:5173', 'https://ascend-pink.vercel.app'],
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -17,6 +35,7 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 

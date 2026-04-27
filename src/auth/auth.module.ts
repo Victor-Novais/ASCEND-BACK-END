@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from '../audit/audit.module';
 import { CompaniesModule } from '../companies/companies.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -13,6 +14,7 @@ import { RolesGuard } from './roles.guard';
 @Module({
   imports: [
     ConfigModule,
+    ThrottlerModule,
     PrismaModule,
     AuditModule,
     CompaniesModule,
@@ -29,7 +31,7 @@ import { RolesGuard } from './roles.guard';
         return {
           secret,
           signOptions: {
-            expiresIn: configService.get<number>('JWT_EXPIRES_IN_SECONDS') ?? 900,
+            expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as any,
           },
         };
       },

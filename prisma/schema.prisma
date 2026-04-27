@@ -115,6 +115,7 @@ model User {
   actionPlans            ActionPlan[]
   auditLogs              AuditLog[]
   risks                  Risk[]
+  refreshTokens          RefreshToken[]
 }
 
 
@@ -507,4 +508,19 @@ model AuditLog {
   @@index([action])
   @@index([success])
   @@index([createdAt])
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    String   @db.Uuid
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revoked])
 }
