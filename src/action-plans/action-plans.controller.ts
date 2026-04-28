@@ -30,10 +30,10 @@ export class ActionPlansController {
     return this.actionPlansService.create(dto);
   }
 
-  @Post('from-assessment/:assessmentId')
+  @Post('from-assessment/:id')
   @Roles(Role.ADMIN, Role.AVALIADOR)
-  generateFromAssessment(@Param('assessmentId', ParseIntPipe) assessmentId: number) {
-    return this.actionPlansService.generateFromAssessment(assessmentId);
+  generateFromAssessment(@Param('id', ParseIntPipe) id: number) {
+    return this.actionPlansService.generateFromAssessment(id);
   }
 
   @Get('stats')

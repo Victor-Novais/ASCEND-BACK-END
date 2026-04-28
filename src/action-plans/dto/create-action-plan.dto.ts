@@ -1,9 +1,10 @@
-import { ActionPlanPriority, QuestionCategory } from '@prisma/client';
+import { ActionPlanPriority } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsIn,
   IsEnum,
-  IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -13,11 +14,11 @@ import {
 
 export class CreateActionPlanDto {
   @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   assessmentId!: number;
 
   @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   companyId!: number;
 
   @IsString()
@@ -29,12 +30,12 @@ export class CreateActionPlanDto {
   @MinLength(10)
   description!: string;
 
-  @IsEnum(QuestionCategory)
-  category!: QuestionCategory;
+  @IsString()
+  @IsIn(['GOVERNANCA', 'SEGURANCA', 'PROCESSOS', 'INFRAESTRUTURA', 'CULTURA'])
+  category!: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(150)
   frameworkRef?: string;
 
   @IsOptional()
@@ -42,7 +43,7 @@ export class CreateActionPlanDto {
   priority?: ActionPlanPriority;
 
   @IsOptional()
-  @IsUUID('4')
+  @IsUUID()
   responsibleId?: string;
 
   @IsOptional()
@@ -51,6 +52,5 @@ export class CreateActionPlanDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
   observations?: string;
 }

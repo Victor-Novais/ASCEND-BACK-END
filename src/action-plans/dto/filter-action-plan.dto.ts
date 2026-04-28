@@ -1,16 +1,16 @@
 import { ActionPlanPriority, ActionPlanStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional } from 'class-validator';
 
 export class FilterActionPlanDto {
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   companyId?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   assessmentId?: number;
 
   @IsOptional()
@@ -20,8 +20,4 @@ export class FilterActionPlanDto {
   @IsOptional()
   @IsEnum(ActionPlanPriority)
   priority?: ActionPlanPriority;
-
-  @IsOptional()
-  @IsUUID('4')
-  responsibleId?: string;
 }
