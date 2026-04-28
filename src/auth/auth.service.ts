@@ -47,37 +47,23 @@ export class AuthService {
       const user = await this.validateUserCredentials(loginDto.email, loginDto.password);
       const tokens = await this.issueTokenPair(user);
 
-      await this.auditService.logSafe({
+      await this.auditService.log({
         userId: user.id,
         userEmail: user.email,
         userRole: user.role,
         action: 'LOGIN',
         entity: 'Auth',
-        entityId: user.id,
-        ipAddress: this.extractIp(request),
-        userAgent: request?.headers['user-agent'],
-        payload: {
-          after: {
-            email: user.email,
-          },
-        },
+        success: true,
       });
 
       return tokens;
     } catch (error) {
-      await this.auditService.logSafe({
+      await this.auditService.log({
         userEmail: loginDto.email,
         action: 'LOGIN_FAILED',
         entity: 'Auth',
-        ipAddress: this.extractIp(request),
-        userAgent: request?.headers['user-agent'],
         success: false,
-        errorMsg: error instanceof Error ? error.message : 'Login failed',
-        payload: {
-          after: {
-            email: loginDto.email,
-          },
-        },
+        errorMsg: 'Credenciais inválidas',
       });
       throw error;
     }
@@ -310,7 +296,7 @@ export class AuthService {
       });
     }
 
-    await this.auditService.logSafe({
+    await this.auditService.log({
       userId,
       action: 'LOGOUT',
       entity: 'Auth',

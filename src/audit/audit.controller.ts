@@ -58,7 +58,7 @@ export class AuditController {
     response.setHeader('Content-Type', 'text/csv; charset=utf-8');
     response.setHeader(
       'Content-Disposition',
-      `attachment; filename="audit-logs-${dateFrom}-${dateTo}.csv"`,
+      'attachment; filename=audit-logs.csv',
     );
     response.send(csv);
   }

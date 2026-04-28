@@ -37,21 +37,21 @@ export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(data: AuditLogInput) {
-    return this.prisma.auditLog.create({
-      data: {
-        ...data,
-        payload: data.payload as Prisma.InputJsonValue | undefined,
-        success: data.success ?? true,
-      },
-    });
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          ...data,
+          payload: data.payload as Prisma.InputJsonValue | undefined,
+          success: data.success ?? true,
+        },
+      });
+    } catch {
+      // log de auditoria nunca deve quebrar a requisição principal
+    }
   }
 
   async logSafe(data: AuditLogInput): Promise<void> {
-    try {
-      await this.log(data);
-    } catch {
-      // Audit logging must never break request processing.
-    }
+    await this.log(data);
   }
 
   async findAll(params: FindAuditLogsParams) {
@@ -152,11 +152,9 @@ export class AuditService {
       'entity',
       'entityId',
       'ipAddress',
-      'userAgent',
       'success',
       'errorMsg',
       'createdAt',
-      'payload',
     ];
 
     const lines = rows.map((row) =>
@@ -169,11 +167,9 @@ export class AuditService {
         row.entity ?? '',
         row.entityId ?? '',
         row.ipAddress ?? '',
-        row.userAgent ?? '',
         row.success,
         row.errorMsg ?? '',
         row.createdAt.toISOString(),
-        row.payload ? JSON.stringify(row.payload) : '',
       ]
         .map((value) => this.escapeCsv(value))
         .join(','),
