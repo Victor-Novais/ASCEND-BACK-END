@@ -19,6 +19,14 @@ export class QuestionsService {
   constructor(private readonly prisma: PrismaService) { }
 
   async create(createQuestionDto: CreateQuestionDto): Promise<QuestionWithHistory> {
+    if (
+      createQuestionDto.frameworkType &&
+      createQuestionDto.frameworkType !== FrameworkType.PROPRIO &&
+      !createQuestionDto.frameworkRef
+    ) {
+      throw new BadRequestException('frameworkRef é obrigatório quando frameworkType não é PROPRIO');
+    }
+
     const frameworkData = this.resolveFrameworkData(createQuestionDto);
 
     const question = await this.prisma.question.create({
@@ -79,17 +87,15 @@ export class QuestionsService {
         frameworkType,
       },
       include: this.defaultInclude,
-      orderBy: [{ category: 'asc' }, { updatedAt: 'desc' }],
+      orderBy: { id: 'asc' },
     });
   }
 
   async getFrameworkCoverage(): Promise<Record<FrameworkType, number> & { total: number }> {
-    const grouped = await this.prisma.question.groupBy({
+    const groups = await this.prisma.question.groupBy({
       by: ['frameworkType'],
       where: { isActive: true },
-      _count: {
-        _all: true,
-      },
+      _count: { id: true },
     });
 
     const coverage: Record<FrameworkType, number> & { total: number } = {
@@ -100,10 +106,9 @@ export class QuestionsService {
       total: 0,
     };
 
-    for (const item of grouped) {
-      const frameworkType = item.frameworkType ?? FrameworkType.PROPRIO;
-      coverage[frameworkType] += item._count._all;
-      coverage.total += item._count._all;
+    for (const group of groups) {
+      coverage[group.frameworkType] += group._count.id;
+      coverage.total += group._count.id;
     }
 
     return coverage;
@@ -119,6 +124,15 @@ export class QuestionsService {
     }
 
     const nextVersion = existing.version + 1;
+
+    if (
+      updateQuestionDto.frameworkType &&
+      updateQuestionDto.frameworkType !== FrameworkType.PROPRIO &&
+      !updateQuestionDto.frameworkRef
+    ) {
+      throw new BadRequestException('frameworkRef é obrigatório quando frameworkType não é PROPRIO');
+    }
+
     const frameworkData = this.resolveFrameworkData(updateQuestionDto, existing);
 
     await this.prisma.$transaction(async (tx) => {
@@ -185,17 +199,12 @@ export class QuestionsService {
     frameworkRef: string | null;
     frameworkNote: string | null;
   } {
-    const frameworkTypeWasProvided = dto.frameworkType !== undefined;
     const frameworkRefWasProvided = dto.frameworkRef !== undefined;
     const frameworkNoteWasProvided = dto.frameworkNote !== undefined;
 
     const frameworkType = dto.frameworkType ?? existing?.frameworkType ?? FrameworkType.PROPRIO;
     const frameworkRef = frameworkRefWasProvided ? dto.frameworkRef ?? null : existing?.frameworkRef ?? null;
     const frameworkNote = frameworkNoteWasProvided ? dto.frameworkNote ?? null : existing?.frameworkNote ?? null;
-
-    if (frameworkTypeWasProvided && !frameworkRef?.trim()) {
-      throw new BadRequestException('frameworkRef is required when frameworkType is provided');
-    }
 
     return {
       frameworkType,
