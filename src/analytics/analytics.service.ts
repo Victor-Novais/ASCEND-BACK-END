@@ -1,56 +1,30 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AssessmentStatus, Prisma, QuestionCategory, Role } from '@prisma/client';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-import { isAdmin, userCompanyScope } from '../auth/user-scope.helper';
+import { userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
 
 type CategoryScores = Record<QuestionCategory, number>;
-
-type CompanyAnalyticsAssessment = {
-  assessmentId: number;
-  completedAt: Date;
-  totalScore: number;
-  maturityLevel: string | null;
-  categoryScores: CategoryScores;
-};
 
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getCompanyEvolution(
-    companyId: number,
-    currentUser?: JwtPayload,
-  ): Promise<CompanyAnalyticsAssessment[]> {
+  async getCompanyEvolution(companyId: number, currentUser?: JwtPayload) {
     await this.ensureCompanyAccess(companyId, currentUser);
 
-    const rows = await this.prisma.assessment.findMany({
-      where: {
-        companyId,
-        status: AssessmentStatus.COMPLETED,
-        completedAt: { not: null },
-        report: { isNot: null },
-      },
-      select: {
-        id: true,
-        completedAt: true,
-        totalScore: true,
-        maturityLevel: true,
-        report: {
-          select: {
-            categoryScores: true,
-          },
-        },
-      },
+    const assessments = await this.prisma.assessment.findMany({
+      where: { companyId, status: AssessmentStatus.COMPLETED },
+      include: { report: true },
       orderBy: { completedAt: 'asc' },
     });
 
-    return rows.map((row) => ({
-      assessmentId: row.id,
-      completedAt: row.completedAt!,
-      totalScore: this.decimalToNumber(row.totalScore),
-      maturityLevel: row.maturityLevel,
-      categoryScores: this.normalizeCategoryScores(row.report?.categoryScores),
+    return assessments.map((assessment) => ({
+      assessmentId: assessment.id,
+      completedAt: assessment.completedAt,
+      totalScore: this.decimalToNumber(assessment.report?.totalScore ?? assessment.totalScore),
+      maturityLevel: assessment.report?.maturityLevel ?? assessment.maturityLevel,
+      categoryScores: this.normalizeCategoryScores(assessment.report?.categoryScores),
     }));
   }
 
@@ -59,86 +33,88 @@ export class AnalyticsService {
       return [];
     }
 
-    const rows = await this.prisma.assessment.findMany({
-      where: {
-        companyId: { in: companyIds },
-        status: AssessmentStatus.COMPLETED,
-        completedAt: { not: null },
-        report: { isNot: null },
-      },
-      select: {
-        id: true,
-        companyId: true,
-        completedAt: true,
-        totalScore: true,
-        maturityLevel: true,
-        company: {
-          select: {
-            name: true,
-            segment: true,
+    const rows = await Promise.all(
+      companyIds.map(async (companyId) => {
+        const assessment = await this.prisma.assessment.findFirst({
+          where: {
+            companyId,
+            status: AssessmentStatus.COMPLETED,
+            report: { isNot: null },
           },
-        },
-        report: {
-          select: {
-            categoryScores: true,
+          include: {
+            report: true,
+            company: {
+              select: {
+                name: true,
+                segment: true,
+              },
+            },
           },
-        },
-      },
-      orderBy: [{ companyId: 'asc' }, { completedAt: 'desc' }],
-    });
+          orderBy: { completedAt: 'desc' },
+        });
 
-    const latestByCompany = new Map<number, (typeof rows)[number]>();
-    for (const row of rows) {
-      if (!latestByCompany.has(row.companyId)) {
-        latestByCompany.set(row.companyId, row);
-      }
-    }
+        if (!assessment) {
+          return null;
+        }
 
-    return companyIds
-      .map((companyId) => latestByCompany.get(companyId))
-      .filter((row): row is NonNullable<typeof row> => Boolean(row))
-      .map((row) => ({
-        companyId: row.companyId,
-        companyName: row.company.name,
-        segment: row.company.segment,
-        totalScore: this.decimalToNumber(row.totalScore),
-        maturityLevel: row.maturityLevel,
-        categoryScores: this.normalizeCategoryScores(row.report?.categoryScores),
-        assessmentDate: row.completedAt,
-      }));
+        return {
+          companyId,
+          companyName: assessment.company.name,
+          segment: assessment.company.segment,
+          assessmentId: assessment.id,
+          completedAt: assessment.completedAt,
+          totalScore: this.decimalToNumber(assessment.report?.totalScore ?? assessment.totalScore),
+          maturityLevel: assessment.report?.maturityLevel ?? assessment.maturityLevel,
+          categoryScores: this.normalizeCategoryScores(assessment.report?.categoryScores),
+        };
+      }),
+    );
+
+    return rows
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.totalScore - a.totalScore);
   }
 
   async getBenchmarkBySegment(segment: string) {
-    const rows = await this.prisma.assessment.findMany({
-      where: {
-        status: AssessmentStatus.COMPLETED,
-        completedAt: { not: null },
-        report: { isNot: null },
-        company: { segment },
-      },
-      select: {
-        companyId: true,
-        totalScore: true,
-        maturityLevel: true,
-        report: {
-          select: {
-            categoryScores: true,
-          },
-        },
-      },
+    const companies = await this.prisma.company.findMany({
+      where: { segment },
+      select: { id: true },
     });
 
-    const totalCompanies = new Set(rows.map((row) => row.companyId)).size;
-    const avgTotalScore =
-      rows.length === 0
-        ? 0
-        : rows.reduce((sum, row) => sum + this.decimalToNumber(row.totalScore), 0) / rows.length;
-    const avgCategoryScores = this.averageCategoryScores(
-      rows.map((row) => this.normalizeCategoryScores(row.report?.categoryScores)),
+    const latestAssessments = await Promise.all(
+      companies.map(({ id }) =>
+        this.prisma.assessment.findFirst({
+          where: {
+            companyId: id,
+            status: AssessmentStatus.COMPLETED,
+            report: { isNot: null },
+          },
+          include: { report: true },
+          orderBy: { completedAt: 'desc' },
+        }),
+      ),
     );
-    const maturityDistribution = rows.reduce<Record<string, number>>((acc, row) => {
-      const key = row.maturityLevel ?? 'UNKNOWN';
-      acc[key] = (acc[key] ?? 0) + 1;
+
+    const completed = latestAssessments.filter(
+      (assessment): assessment is NonNullable<typeof assessment> => assessment !== null,
+    );
+
+    const avgTotalScore =
+      completed.length === 0
+        ? 0
+        : completed.reduce(
+            (sum, assessment) =>
+              sum + this.decimalToNumber(assessment.report?.totalScore ?? assessment.totalScore),
+            0,
+          ) / completed.length;
+
+    const avgCategoryScores = this.averageCategoryScores(
+      completed.map((assessment) => this.normalizeCategoryScores(assessment.report?.categoryScores)),
+    );
+
+    const maturityDistribution = completed.reduce<Record<string, number>>((acc, assessment) => {
+      const level = assessment.report?.maturityLevel ?? assessment.maturityLevel ?? 'UNKNOWN';
+      acc[level] = (acc[level] ?? 0) + 1;
       return acc;
     }, {});
 
@@ -146,256 +122,197 @@ export class AnalyticsService {
       segment,
       avgTotalScore: this.round(avgTotalScore),
       avgCategoryScores,
-      totalCompanies,
+      totalCompanies: companies.length,
       maturityDistribution,
     };
   }
 
   async getPlatformStats() {
+    const now = new Date();
+    const fromDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
     const [
       totalCompanies,
       totalAssessments,
-      totalCompleted,
+      totalCompletedAssessments,
       totalUsers,
-      completedAssessments,
+      avgReportScore,
+      maturityDistributionRows,
+      assessmentsLast12Months,
       companies,
-      recentAssessments,
-      recentCompanies,
     ] = await Promise.all([
       this.prisma.company.count(),
       this.prisma.assessment.count(),
       this.prisma.assessment.count({ where: { status: AssessmentStatus.COMPLETED } }),
       this.prisma.user.count(),
+      this.prisma.report.aggregate({ _avg: { totalScore: true } }),
+      this.prisma.report.groupBy({
+        by: ['maturityLevel'],
+        _count: { maturityLevel: true },
+      }),
       this.prisma.assessment.findMany({
-        where: {
-          status: AssessmentStatus.COMPLETED,
-          completedAt: { not: null },
-          report: { isNot: null },
-        },
-        select: {
-          id: true,
-          companyId: true,
-          createdAt: true,
-          completedAt: true,
-          totalScore: true,
-          company: {
-            select: {
-              name: true,
-              segment: true,
-            },
-          },
-        },
-        orderBy: { completedAt: 'desc' },
+        where: { createdAt: { gte: fromDate } },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'asc' },
       }),
       this.prisma.company.findMany({
         select: {
           id: true,
-          name: true,
           segment: true,
-          createdAt: true,
         },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.assessment.findMany({
-        select: {
-          id: true,
-          createdAt: true,
-          company: {
-            select: {
-              name: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-      this.prisma.company.findMany({
-        select: {
-          id: true,
-          name: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
       }),
     ]);
 
-    const avgMaturityScore =
-      completedAssessments.length === 0
-        ? 0
-        : completedAssessments.reduce(
-            (sum, row) => sum + this.decimalToNumber(row.totalScore),
-            0,
-          ) / completedAssessments.length;
+    const topSegmentRows = await Promise.all(
+      [...new Set(companies.map((company) => company.segment))].map(async (segment) => {
+        const companyIds = companies
+          .filter((company) => company.segment === segment)
+          .map((company) => company.id);
 
-    const maturityDistribution = {
-      INICIAL: 0,
-      BASICO: 0,
-      EFICIENTE: 0,
-      EFICAZ: 0,
-      OTIMIZADO: 0,
-    };
-    for (const row of completedAssessments) {
-      maturityDistribution[this.toPlatformMaturityLevel(this.decimalToNumber(row.totalScore))] += 1;
-    }
+        const latestAssessments = await Promise.all(
+          companyIds.map((companyId) =>
+            this.prisma.assessment.findFirst({
+              where: {
+                companyId,
+                status: AssessmentStatus.COMPLETED,
+                report: { isNot: null },
+              },
+              include: { report: true },
+              orderBy: { completedAt: 'desc' },
+            }),
+          ),
+        );
 
-    const assessmentsByMonth = this.buildAssessmentsByMonth(completedAssessments);
-    const topSegments = this.buildTopSegments(completedAssessments);
-    const recentActivity = [
-      ...recentAssessments.map((row) => ({
-        type: 'assessment' as const,
-        description: `Assessment #${row.id} created for ${row.company.name}`,
-        createdAt: row.createdAt,
-      })),
-      ...recentCompanies.map((row) => ({
-        type: 'company' as const,
-        description: `Company ${row.name} created`,
-        createdAt: row.createdAt,
-      })),
-    ]
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, 10);
+        const completed = latestAssessments.filter(
+          (assessment): assessment is NonNullable<typeof assessment> => assessment !== null,
+        );
+
+        const avgScore =
+          completed.length === 0
+            ? 0
+            : completed.reduce(
+                (sum, assessment) =>
+                  sum +
+                  this.decimalToNumber(assessment.report?.totalScore ?? assessment.totalScore),
+                0,
+              ) / completed.length;
+
+        return {
+          segment,
+          count: companyIds.length,
+          avgScore: this.round(avgScore),
+        };
+      }),
+    );
 
     return {
       totalCompanies,
       totalAssessments,
-      totalCompleted,
+      totalCompletedAssessments,
       totalUsers,
-      avgMaturityScore: this.round(avgMaturityScore),
-      maturityDistribution,
-      assessmentsByMonth,
-      topSegments,
-      recentActivity,
+      avgTotalScore: this.round(this.decimalToNumber(avgReportScore._avg.totalScore)),
+      maturityDistribution: maturityDistributionRows.reduce<Record<string, number>>((acc, row) => {
+        acc[row.maturityLevel] = row._count.maturityLevel;
+        return acc;
+      }, {}),
+      assessmentsByMonth: this.buildAssessmentsByMonth(assessmentsLast12Months, fromDate),
+      topSegments: topSegmentRows.sort((a, b) => b.count - a.count).slice(0, 3),
     };
   }
 
   async getCompanyRadar(companyId: number, currentUser?: JwtPayload) {
     const company = await this.ensureCompanyAccess(companyId, currentUser);
-    const latestAssessment = await this.findLatestCompletedAssessment(companyId);
+    const latestAssessment = await this.prisma.assessment.findFirst({
+      where: {
+        companyId,
+        status: AssessmentStatus.COMPLETED,
+        report: { isNot: null },
+      },
+      include: { report: true },
+      orderBy: { completedAt: 'desc' },
+    });
 
     if (!latestAssessment) {
-      throw new NotFoundException('No completed assessment found for this company');
+      throw new NotFoundException('Nenhum assessment concluído encontrado para esta empresa');
     }
 
     const benchmark = await this.getBenchmarkBySegment(company.segment);
 
     return {
-      company: {
-        name: company.name,
-        categoryScores: this.normalizeCategoryScores(
-          latestAssessment.report?.categoryScores,
-        ),
-      },
-      segmentAvg: {
-        categoryScores: benchmark.avgCategoryScores,
-      },
+      companyName: company.name,
+      categoryScores: this.normalizeCategoryScores(latestAssessment.report?.categoryScores),
+      segmentAvgScores: benchmark.avgCategoryScores,
       categories: Object.values(QuestionCategory),
     };
   }
 
   async getCompanyReportExport(companyId: number, currentUser?: JwtPayload) {
     const company = await this.ensureCompanyAccess(companyId, currentUser);
-    const evolution = await this.getCompanyEvolution(companyId, currentUser);
-    const latestAssessment = await this.findLatestCompletedAssessment(companyId);
-    const benchmark = await this.getBenchmarkBySegment(company.segment);
+    const assessments = await this.prisma.assessment.findMany({
+      where: {
+        companyId,
+        status: AssessmentStatus.COMPLETED,
+        report: { isNot: null },
+      },
+      include: { report: true },
+      orderBy: { completedAt: 'asc' },
+    });
 
     return {
       company: {
         id: company.id,
         name: company.name,
         segment: company.segment,
-        size: company.size,
         responsible: company.responsible,
         responsibleEmail: company.responsibleEmail,
       },
-      latestAssessment: latestAssessment
-        ? {
-            assessmentId: latestAssessment.id,
-            completedAt: latestAssessment.completedAt,
-            totalScore: this.decimalToNumber(latestAssessment.totalScore),
-            maturityLevel: latestAssessment.maturityLevel,
-            categoryScores: this.normalizeCategoryScores(
-              latestAssessment.report?.categoryScores,
-            ),
-          }
-        : null,
-      evolution,
-      radar: latestAssessment
-        ? {
-            company: {
-              name: company.name,
-              categoryScores: this.normalizeCategoryScores(
-                latestAssessment.report?.categoryScores,
-              ),
-            },
-            segmentAvg: {
-              categoryScores: benchmark.avgCategoryScores,
-            },
-            categories: Object.values(QuestionCategory),
-          }
-        : null,
-      benchmark,
-      generatedAt: new Date(),
+      assessments: assessments.map((assessment) => ({
+        assessmentId: assessment.id,
+        completedAt: assessment.completedAt,
+        totalScore: this.decimalToNumber(assessment.report?.totalScore ?? assessment.totalScore),
+        maturityLevel: assessment.report?.maturityLevel ?? assessment.maturityLevel,
+        categoryScores: this.normalizeCategoryScores(assessment.report?.categoryScores),
+        strengths: assessment.report?.strengths ?? [],
+        weaknesses: assessment.report?.weaknesses ?? [],
+        recommendations: assessment.report?.recommendations ?? [],
+        generatedAt: assessment.report?.generatedAt ?? null,
+      })),
+      exportedAt: new Date(),
     };
   }
 
   private async ensureCompanyAccess(companyId: number, currentUser?: JwtPayload) {
+    const where =
+      currentUser?.role === Role.CLIENTE
+        ? { id: companyId, ...userCompanyScope(currentUser.sub) }
+        : { id: companyId };
+
     const company = await this.prisma.company.findFirst({
-      where: !currentUser || isAdmin({ id: currentUser.sub, role: currentUser.role })
-        ? { id: companyId }
-        : {
-            id: companyId,
-            ...userCompanyScope(currentUser.sub),
-          },
+      where,
       select: {
         id: true,
         name: true,
         segment: true,
-        size: true,
         responsible: true,
         responsibleEmail: true,
       },
     });
 
     if (!company) {
-      if (currentUser && currentUser.role === Role.CLIENTE) {
-        throw new ForbiddenException('You do not have access to this company');
+      if (currentUser?.role === Role.CLIENTE) {
+        throw new ForbiddenException('Acesso negado a esta empresa');
       }
-      throw new NotFoundException(`Company with id '${companyId}' not found`);
+      throw new NotFoundException(`Empresa ${companyId} não encontrada`);
     }
 
     return company;
   }
 
-  private async findLatestCompletedAssessment(companyId: number) {
-    return this.prisma.assessment.findFirst({
-      where: {
-        companyId,
-        status: AssessmentStatus.COMPLETED,
-        completedAt: { not: null },
-        report: { isNot: null },
-      },
-      select: {
-        id: true,
-        completedAt: true,
-        totalScore: true,
-        maturityLevel: true,
-        report: {
-          select: {
-            categoryScores: true,
-          },
-        },
-      },
-      orderBy: { completedAt: 'desc' },
-    });
-  }
-
-  private normalizeCategoryScores(value: unknown): CategoryScores {
+  private normalizeCategoryScores(value: Prisma.JsonValue | null | undefined): CategoryScores {
     const raw = (value ?? {}) as Record<string, unknown>;
-    const categories = Object.values(QuestionCategory) as QuestionCategory[];
     const result = {} as CategoryScores;
 
-    for (const category of categories) {
+    for (const category of Object.values(QuestionCategory) as QuestionCategory[]) {
       result[category] = this.decimalToNumber(raw[category]);
     }
 
@@ -403,10 +320,9 @@ export class AnalyticsService {
   }
 
   private averageCategoryScores(scoresList: CategoryScores[]): CategoryScores {
-    const categories = Object.values(QuestionCategory) as QuestionCategory[];
     const result = {} as CategoryScores;
 
-    for (const category of categories) {
+    for (const category of Object.values(QuestionCategory) as QuestionCategory[]) {
       const values = scoresList.map((scores) => scores[category] ?? 0);
       result[category] =
         values.length === 0
@@ -418,66 +334,25 @@ export class AnalyticsService {
   }
 
   private buildAssessmentsByMonth(
-    rows: Array<{
-      completedAt: Date | null;
-    }>,
-  ) {
+    rows: Array<{ createdAt: Date }>,
+    fromDate: Date,
+  ): Array<{ month: string; count: number }> {
     const months = new Map<string, number>();
-    const now = new Date();
 
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    for (let i = 0; i < 12; i += 1) {
+      const date = new Date(fromDate.getFullYear(), fromDate.getMonth() + i, 1);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       months.set(key, 0);
     }
 
     for (const row of rows) {
-      if (!row.completedAt) continue;
-      const key = `${row.completedAt.getFullYear()}-${String(
-        row.completedAt.getMonth() + 1,
-      ).padStart(2, '0')}`;
+      const key = `${row.createdAt.getFullYear()}-${String(row.createdAt.getMonth() + 1).padStart(2, '0')}`;
       if (months.has(key)) {
         months.set(key, (months.get(key) ?? 0) + 1);
       }
     }
 
     return [...months.entries()].map(([month, count]) => ({ month, count }));
-  }
-
-  private buildTopSegments(
-    rows: Array<{
-      company: { segment: string };
-      totalScore: Prisma.Decimal | number | null;
-    }>,
-  ) {
-    const grouped = new Map<string, { count: number; sum: number }>();
-
-    for (const row of rows) {
-      const segment = row.company.segment;
-      const current = grouped.get(segment) ?? { count: 0, sum: 0 };
-      current.count += 1;
-      current.sum += this.decimalToNumber(row.totalScore);
-      grouped.set(segment, current);
-    }
-
-    return [...grouped.entries()]
-      .map(([segment, value]) => ({
-        segment,
-        count: value.count,
-        avgScore: this.round(value.sum / value.count),
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }
-
-  private toPlatformMaturityLevel(
-    score: number,
-  ): 'INICIAL' | 'BASICO' | 'EFICIENTE' | 'EFICAZ' | 'OTIMIZADO' {
-    if (score <= 20) return 'INICIAL';
-    if (score <= 40) return 'BASICO';
-    if (score <= 60) return 'EFICIENTE';
-    if (score <= 80) return 'EFICAZ';
-    return 'OTIMIZADO';
   }
 
   private decimalToNumber(value: unknown): number {
@@ -488,11 +363,10 @@ export class AnalyticsService {
       return Number.isFinite(parsed) ? parsed : 0;
     }
     const maybeDecimal = value as { toNumber?: () => number };
-    if (typeof maybeDecimal?.toNumber === 'function') {
-      const parsed = maybeDecimal.toNumber();
-      return Number.isFinite(parsed) ? parsed : 0;
+    if (typeof maybeDecimal.toNumber === 'function') {
+      return maybeDecimal.toNumber();
     }
-    const parsed = Number(value as any);
+    const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   }
 

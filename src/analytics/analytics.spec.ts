@@ -16,6 +16,10 @@ describe('AnalyticsService', () => {
     user: {
       count: jest.fn(),
     },
+    report: {
+      aggregate: jest.fn(),
+      groupBy: jest.fn(),
+    },
   };
 
   let service: AnalyticsService;
@@ -30,7 +34,6 @@ describe('AnalyticsService', () => {
       id: 5,
       name: 'ASCEND',
       segment: 'Tecnologia',
-      size: null,
       responsible: 'Ana',
       responsibleEmail: 'ana@example.com',
     });
@@ -41,6 +44,8 @@ describe('AnalyticsService', () => {
         totalScore: 55,
         maturityLevel: 'EFICAZ',
         report: {
+          totalScore: 55,
+          maturityLevel: 'EFICAZ',
           categoryScores: {
             GOVERNANCA: 50,
             SEGURANCA: 60,
@@ -75,33 +80,101 @@ describe('AnalyticsService', () => {
     ]);
   });
 
-  it('returns comparison using latest completed assessment per company', async () => {
-    prisma.assessment.findMany.mockResolvedValue([
-      {
+  it('returns comparison sorted by total score desc', async () => {
+    prisma.assessment.findFirst
+      .mockResolvedValueOnce({
         id: 9,
         companyId: 1,
         completedAt: new Date('2026-03-10T00:00:00.000Z'),
         totalScore: 70,
         maturityLevel: 'EFICAZ',
         company: { name: 'A', segment: 'Tech' },
-        report: { categoryScores: { GOVERNANCA: 1, SEGURANCA: 2, PROCESSOS: 3, INFRAESTRUTURA: 4, CULTURA: 5 } },
-      },
-      {
+        report: {
+          totalScore: 70,
+          maturityLevel: 'EFICAZ',
+          categoryScores: {
+            GOVERNANCA: 1,
+            SEGURANCA: 2,
+            PROCESSOS: 3,
+            INFRAESTRUTURA: 4,
+            CULTURA: 5,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
         id: 10,
         companyId: 2,
         completedAt: new Date('2026-03-11T00:00:00.000Z'),
         totalScore: 65,
         maturityLevel: 'EFICIENTE',
         company: { name: 'B', segment: 'Health' },
-        report: { categoryScores: { GOVERNANCA: 5, SEGURANCA: 4, PROCESSOS: 3, INFRAESTRUTURA: 2, CULTURA: 1 } },
-      },
-    ]);
+        report: {
+          totalScore: 65,
+          maturityLevel: 'EFICIENTE',
+          categoryScores: {
+            GOVERNANCA: 5,
+            SEGURANCA: 4,
+            PROCESSOS: 3,
+            INFRAESTRUTURA: 2,
+            CULTURA: 1,
+          },
+        },
+      });
 
     const result = await service.getCompanyComparison([1, 2]);
 
     expect(result).toHaveLength(2);
     expect(result[0].companyId).toBe(1);
+    expect(result[0].totalScore).toBe(70);
     expect(result[1].companyId).toBe(2);
+  });
+
+  it('returns benchmark using latest completed assessment per company', async () => {
+    prisma.company.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    prisma.assessment.findFirst
+      .mockResolvedValueOnce({
+        id: 1,
+        companyId: 1,
+        status: AssessmentStatus.COMPLETED,
+        totalScore: 60,
+        maturityLevel: 'EFICIENTE',
+        report: {
+          totalScore: 60,
+          maturityLevel: 'EFICIENTE',
+          categoryScores: {
+            GOVERNANCA: 50,
+            SEGURANCA: 60,
+            PROCESSOS: 70,
+            INFRAESTRUTURA: 80,
+            CULTURA: 90,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 2,
+        companyId: 2,
+        status: AssessmentStatus.COMPLETED,
+        totalScore: 80,
+        maturityLevel: 'EFICAZ',
+        report: {
+          totalScore: 80,
+          maturityLevel: 'EFICAZ',
+          categoryScores: {
+            GOVERNANCA: 70,
+            SEGURANCA: 80,
+            PROCESSOS: 90,
+            INFRAESTRUTURA: 60,
+            CULTURA: 50,
+          },
+        },
+      });
+
+    const result = await service.getBenchmarkBySegment('Tech');
+
+    expect(result.segment).toBe('Tech');
+    expect(result.avgTotalScore).toBe(70);
+    expect(result.totalCompanies).toBe(2);
+    expect(result.avgCategoryScores[QuestionCategory.SEGURANCA]).toBe(70);
   });
 
   it('returns platform stats aggregate', async () => {
@@ -110,46 +183,40 @@ describe('AnalyticsService', () => {
       .mockResolvedValueOnce(5)
       .mockResolvedValueOnce(2);
     prisma.user.count.mockResolvedValue(7);
-    prisma.assessment.findMany
-      .mockResolvedValueOnce([
-        {
-          id: 1,
-          companyId: 1,
-          createdAt: new Date('2026-01-01T00:00:00.000Z'),
-          completedAt: new Date('2026-01-15T00:00:00.000Z'),
-          totalScore: 82,
-          company: { name: 'A', segment: 'Tech' },
-        },
-        {
-          id: 2,
-          companyId: 2,
-          createdAt: new Date('2026-02-01T00:00:00.000Z'),
-          completedAt: new Date('2026-02-15T00:00:00.000Z'),
-          totalScore: 38,
-          company: { name: 'B', segment: 'Tech' },
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: 100,
-          createdAt: new Date('2026-04-01T00:00:00.000Z'),
-          company: { name: 'A' },
-        },
-      ]);
-    prisma.company.findMany
-      .mockResolvedValueOnce([
-        { id: 1, name: 'A', segment: 'Tech', createdAt: new Date('2026-03-01T00:00:00.000Z') },
-      ])
-      .mockResolvedValueOnce([
-        { id: 1, name: 'A', createdAt: new Date('2026-04-02T00:00:00.000Z') },
-      ]);
+    prisma.report.aggregate.mockResolvedValue({
+      _avg: { totalScore: 60 },
+    });
+    prisma.report.groupBy.mockResolvedValue([
+      { maturityLevel: 'EFICAZ', _count: { maturityLevel: 1 } },
+      { maturityLevel: 'EFICIENTE', _count: { maturityLevel: 1 } },
+    ]);
+    prisma.assessment.findMany.mockResolvedValue([
+      { createdAt: new Date('2026-01-15T00:00:00.000Z') },
+      { createdAt: new Date('2026-02-15T00:00:00.000Z') },
+    ]);
+    prisma.company.findMany.mockResolvedValue([
+      { id: 1, segment: 'Tech' },
+      { id: 2, segment: 'Tech' },
+      { id: 3, segment: 'Health' },
+    ]);
+    prisma.assessment.findFirst
+      .mockResolvedValueOnce({
+        totalScore: 82,
+        report: { totalScore: 82 },
+      })
+      .mockResolvedValueOnce({
+        totalScore: 38,
+        report: { totalScore: 38 },
+      })
+      .mockResolvedValueOnce(null);
 
     const result = await service.getPlatformStats();
 
     expect(result.totalCompanies).toBe(3);
     expect(result.totalAssessments).toBe(5);
-    expect(result.totalCompleted).toBe(2);
+    expect(result.totalCompletedAssessments).toBe(2);
     expect(result.totalUsers).toBe(7);
+    expect(result.avgTotalScore).toBe(60);
     expect(result.topSegments[0]).toEqual({ segment: 'Tech', count: 2, avgScore: 60 });
   });
 });
