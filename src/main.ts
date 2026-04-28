@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
@@ -8,20 +9,14 @@ async function bootstrap() {
 
   app.use(
     helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-        },
-      },
-      hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+      contentSecurityPolicy: false,
+      hsts: { maxAge: 31536000, includeSubDomains: true },
       frameguard: { action: 'deny' },
       noSniff: true,
-      xssFilter: true,
-    } as any),
+    }),
   );
   app.use(helmet.hidePoweredBy());
+  app.use(cookieParser());
 
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',

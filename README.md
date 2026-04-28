@@ -168,7 +168,7 @@ Body:
 {
   "name": "João Silva",
   "email": "joao@ascend.com",
-  "password": "123456"
+  "password": "Senha@1234"
 }
 ```
 

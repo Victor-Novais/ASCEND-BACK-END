@@ -1,6 +1,5 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Request } from 'express';
 import { Role } from '@prisma/client';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { LoginDto } from './dto/login.dto';
@@ -18,12 +17,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  @Throttle({ short: { limit: 5, ttl: 300000 } })
-  login(
-    @Body() loginDto: LoginDto,
-    @Req() request: Request,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
-    return this.authService.login(loginDto, request);
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
+  login(@Body() loginDto: LoginDto): Promise<{ accessToken: string; refreshToken: string }> {
+    return this.authService.login(loginDto);
   }
 
   @Post('register')
@@ -33,11 +29,10 @@ export class AuthController {
 
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+    return this.authService.refreshAccessToken(dto.refreshToken);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE, Role.COLLABORATOR)
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
   logout(@Body() dto: LogoutDto, @CurrentUser() user: JwtPayload) {
     return this.authService.logout(user.sub, dto.refreshToken);

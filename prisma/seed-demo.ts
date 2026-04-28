@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 
-const DEMO_PASSWORD = '12345678';
+const DEMO_PASSWORD = 'Demo@1234';
 const DEMO_COMPANY_CODE = 'DEMO-HAROLDO-TECH';
 const DEMO_COMPANY_NAME = 'DEMO - HAROLDO TECH';
 const DEMO_SEGMENT = 'Tecnologia';

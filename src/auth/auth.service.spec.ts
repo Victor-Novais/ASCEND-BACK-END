@@ -25,7 +25,7 @@ describe('AuthService Refresh Tokens', () => {
   };
 
   const auditService = {
-    logSafe: jest.fn(),
+    log: jest.fn(),
   };
 
   const configService = {
@@ -55,6 +55,7 @@ describe('AuthService Refresh Tokens', () => {
 
   it('returns a new token pair when refresh token is valid', async () => {
     prisma.refreshToken.findUnique.mockResolvedValue({
+      id: 10,
       token: 'old-refresh',
       userId: '550e8400-e29b-41d4-a716-446655440000',
       expiresAt: new Date(Date.now() + 60_000),
@@ -76,10 +77,10 @@ describe('AuthService Refresh Tokens', () => {
     prisma.refreshToken.update.mockResolvedValue({});
     prisma.refreshToken.create.mockResolvedValue({});
 
-    const result = await service.refresh('old-refresh');
+    const result = await service.refreshAccessToken('old-refresh');
 
     expect(prisma.refreshToken.update).toHaveBeenCalledWith({
-      where: { token: 'old-refresh' },
+      where: { id: 10 },
       data: { revoked: true },
     });
     expect(prisma.refreshToken.create).toHaveBeenCalledWith(
@@ -99,6 +100,7 @@ describe('AuthService Refresh Tokens', () => {
 
   it('rejects revoked refresh tokens', async () => {
     prisma.refreshToken.findUnique.mockResolvedValue({
+      id: 10,
       token: 'revoked-token',
       userId: '550e8400-e29b-41d4-a716-446655440000',
       expiresAt: new Date(Date.now() + 60_000),
@@ -110,6 +112,8 @@ describe('AuthService Refresh Tokens', () => {
       },
     });
 
-    await expect(service.refresh('revoked-token')).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.refreshAccessToken('revoked-token')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
   });
 });

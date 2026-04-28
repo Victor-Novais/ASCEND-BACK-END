@@ -9,7 +9,6 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { Request } from 'express';
 import { AuditService } from '../audit/audit.service';
 import { CompaniesService } from '../companies/companies.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -39,10 +38,7 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async login(
-    loginDto: LoginDto,
-    request?: Request,
-  ): Promise<TokenPair> {
+  async login(loginDto: LoginDto): Promise<TokenPair> {
     try {
       const user = await this.validateUserCredentials(loginDto.email, loginDto.password);
       const tokens = await this.issueTokenPair(user);
@@ -230,8 +226,8 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<TokenPair> {
-    const storedToken = await this.prisma.refreshToken.findUnique({
+  async refreshAccessToken(refreshToken: string): Promise<TokenPair> {
+    const record = await this.prisma.refreshToken.findUnique({
       where: { token: refreshToken },
       include: {
         user: {
@@ -244,35 +240,27 @@ export class AuthService {
       },
     });
 
-    if (!storedToken || storedToken.revoked) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    if (storedToken.expiresAt.getTime() <= Date.now()) {
-      await this.prisma.refreshToken.update({
-        where: { token: refreshToken },
-        data: { revoked: true },
-      });
-      throw new UnauthorizedException('Refresh token expired');
+    if (!record || record.revoked || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
     }
 
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
         secret: this.getRefreshSecret(),
       });
-      if (payload.sub !== storedToken.userId) {
-        throw new UnauthorizedException('Invalid refresh token');
+      if (payload.sub !== record.userId) {
+        throw new UnauthorizedException('Refresh token inválido ou expirado');
       }
     } catch {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
     }
 
     await this.prisma.refreshToken.update({
-      where: { token: refreshToken },
+      where: { id: record.id },
       data: { revoked: true },
     });
 
-    return this.issueTokenPair(storedToken.user);
+    return this.issueTokenPair(record.user);
   }
 
   async logout(userId: string, refreshToken: string): Promise<{ message: string }> {
@@ -361,14 +349,6 @@ export class AuthService {
       email: user.email,
       role: user.role,
     };
-  }
-
-  private extractIp(request?: Request): string | undefined {
-    if (!request) {
-      return undefined;
-    }
-
-    return request.ip || request.socket?.remoteAddress || undefined;
   }
 
   private async issueTokenPair(user: AuthUser): Promise<TokenPair> {

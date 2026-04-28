@@ -1,5 +1,13 @@
 import { Role } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -14,10 +22,9 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(8)
+  @MinLength(8, { message: 'Senha deve ter pelo menos 8 caracteres' })
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/, {
-    message:
-      'Senha deve ter mínimo 8 caracteres, com letra maiúscula, minúscula, número e símbolo especial',
+    message: 'Senha deve conter: maiúscula, minúscula, número e símbolo especial (@$!%*?&#)',
   })
   @MaxLength(128)
   password?: string;

@@ -23,10 +23,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 10 },
-      { name: 'medium', ttl: 60000, limit: 100 },
-    ]),
+    ThrottlerModule.forRoot([{ name: 'global', ttl: 60000, limit: 100 }]),
     PrismaModule,
     ScoreModule,
     ReportModule,

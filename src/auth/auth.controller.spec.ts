@@ -13,23 +13,18 @@ describe('AuthController Security', () => {
   const authService = {
     login: jest.fn(),
     register: jest.fn(),
-    refresh: jest.fn(),
+    refreshAccessToken: jest.fn(),
     logout: jest.fn(),
     getProfile: jest.fn(),
   };
   const auditService = {
-    logSafe: jest.fn(),
+    log: jest.fn(),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ThrottlerModule.forRoot([
-          { name: 'short', ttl: 1000, limit: 10 },
-          { name: 'medium', ttl: 60000, limit: 100 },
-        ]),
-      ],
+      imports: [ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 100 }])],
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: authService },
