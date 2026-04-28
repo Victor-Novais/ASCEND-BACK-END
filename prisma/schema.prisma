@@ -114,7 +114,7 @@ model User {
   assessmentAssignments   AssessmentAssignment[]
   responsiblePlans       ActionPlan[] @relation("ActionPlanResponsible")
   auditLogs              AuditLog[]
-  risks                  Risk[]
+  responsibleRisks       Risk[]       @relation("RiskResponsible")
   refreshTokens          RefreshToken[]
 }
 
@@ -315,9 +315,9 @@ model Risk {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  assessment  Assessment @relation(fields: [assessmentId], references: [id])
-  company     Company    @relation(fields: [companyId], references: [id])
-  responsible User?      @relation(fields: [responsibleId], references: [id])
+  assessment  Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  responsible User?      @relation("RiskResponsible", fields: [responsibleId], references: [id])
 
   @@index([assessmentId])
   @@index([companyId])
