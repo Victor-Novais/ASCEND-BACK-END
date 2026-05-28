@@ -8,7 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-
 enum Role {
   ADMIN
   AVALIADOR
@@ -94,56 +93,52 @@ enum MaturityLevel {
   ESTRATEGICO
 }
 
-
-
 model User {
-  id        String   @id @db.Uuid
-  name      String?
-  email     String   @unique
+  id           String   @id @db.Uuid
+  name         String?
+  email        String   @unique
   passwordHash String
-  role      Role
-  createdAt DateTime @default(now())
+  role         Role
+  createdAt    DateTime @default(now())
 
-  companiesCreated Company[] @relation("CompanyCreator")
+  companiesCreated Company[]    @relation("CompanyCreator")
   assessments      Assessment[] @relation("Assessor")
 
-  assignments UserCompanyAssignment[]
-  questionsCreated Question[] @relation("QuestionCreator")
+  assignments             UserCompanyAssignment[]
+  questionsCreated        Question[]              @relation("QuestionCreator")
   questionVersionsChanged QuestionVersion[]
   assessmentResponses     AssessmentResponse[]
   assessmentAssignments   AssessmentAssignment[]
-  responsiblePlans       ActionPlan[] @relation("ActionPlanResponsible")
-  auditLogs              AuditLog[]
-  responsibleRisks       Risk[]       @relation("RiskResponsible")
-  refreshTokens          RefreshToken[]
+  responsiblePlans        ActionPlan[]            @relation("ActionPlanResponsible")
+  auditLogs               AuditLog[]
+  responsibleRisks        Risk[]                  @relation("RiskResponsible")
+  pdtisCreated            PDTI[]                  @relation("PDTICreator")
+  refreshTokens           RefreshToken[]
 }
 
-
-
 model Company {
-  id                 Int          @id @default(autoincrement())
-  companyCode        String       @unique
-  name               String
-  segment            String
-  size               CompanySize?
-  responsible        String
-  responsibleEmail   String
-  responsiblePhone   String?
-  cnpj               String?
-  address            String?
-  createdAt          DateTime     @default(now())
+  id               Int          @id @default(autoincrement())
+  companyCode      String       @unique
+  name             String
+  segment          String
+  size             CompanySize?
+  responsible      String
+  responsibleEmail String
+  responsiblePhone String?
+  cnpj             String?
+  address          String?
+  createdAt        DateTime     @default(now())
 
-  createdById String?   @db.Uuid
-  createdBy   User? @relation("CompanyCreator", fields: [createdById], references: [id])
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("CompanyCreator", fields: [createdById], references: [id])
 
   assessments Assessment[]
   assignments UserCompanyAssignment[]
   history     AssessmentHistory[]
   actionPlans ActionPlan[]
   risks       Risk[]
+  pdtis       PDTI[]
 }
-
-
 
 model UserCompanyAssignment {
   id        Int      @id @default(autoincrement())
@@ -157,26 +152,24 @@ model UserCompanyAssignment {
   @@unique([userId, companyId])
 }
 
-
-
 model Question {
-  id               Int               @id @default(autoincrement())
+  id               Int              @id @default(autoincrement())
   version          Int
   text             String
   category         QuestionCategory
-  weight           Decimal           @db.Decimal(3, 2)
+  weight           Decimal          @db.Decimal(3, 2)
   responseType     ResponseType
   evidenceRequired Boolean
   hint             String?
-  isActive         Boolean           @default(true)
-  frameworkType    FrameworkType     @default(PROPRIO)
+  isActive         Boolean          @default(true)
+  frameworkType    FrameworkType    @default(PROPRIO)
   frameworkRef     String?
   frameworkNote    String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   createdById String @db.Uuid
-  createdBy   User @relation("QuestionCreator", fields: [createdById], references: [id])
+  createdBy   User   @relation("QuestionCreator", fields: [createdById], references: [id])
 
   responses AssessmentResponse[]
   versions  QuestionVersion[]
@@ -207,7 +200,7 @@ model QuestionTemplate {
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
 
-  questionnaireTemplate QuestionnaireTemplate @relation(fields: [questionnaireTemplateId], references: [id], onDelete: Cascade)
+  questionnaireTemplate QuestionnaireTemplate    @relation(fields: [questionnaireTemplateId], references: [id], onDelete: Cascade)
   options               QuestionTemplateOption[]
 
   @@index([questionnaireTemplateId])
@@ -246,8 +239,6 @@ model AssessmentAssignment {
   @@index([userId])
 }
 
-
-
 model QuestionVersion {
   id         Int      @id @default(autoincrement())
   questionId Int
@@ -257,47 +248,47 @@ model QuestionVersion {
   changedAt  DateTime @default(now())
 
   changedById String @db.Uuid
-  changedBy   User @relation(fields: [changedById], references: [id])
+  changedBy   User   @relation(fields: [changedById], references: [id])
 
   question Question @relation(fields: [questionId], references: [id])
 }
 
-
 model Assessment {
-  id            Int              @id @default(autoincrement())
-  companyId     Int
-  assessorId    String           @db.Uuid
+  id                      Int              @id @default(autoincrement())
+  companyId               Int
+  assessorId              String           @db.Uuid
   /// When set, questions come from this global template; scoring aggregates collaborator submissions.
   questionnaireTemplateId Int?
-  status        AssessmentStatus @default(NOT_STARTED)
-  startedAt     DateTime?
-  completedAt   DateTime?
-  score         Float?
-  totalScore    Decimal?         @db.Decimal(5, 2)
-  maturityLevel MaturityLevel?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  status                  AssessmentStatus @default(NOT_STARTED)
+  startedAt               DateTime?
+  completedAt             DateTime?
+  score                   Float?
+  totalScore              Decimal?         @db.Decimal(5, 2)
+  maturityLevel           MaturityLevel?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 
-  company                 Company                 @relation(fields: [companyId], references: [id])
-  assessor                User                    @relation("Assessor", fields: [assessorId], references: [id])
-  questionnaireTemplate   QuestionnaireTemplate?  @relation(fields: [questionnaireTemplateId], references: [id])
-  assignments             AssessmentAssignment[]
-  questions               AssessmentQuestion[]
-  answers                 Answer[]
+  company               Company                @relation(fields: [companyId], references: [id])
+  assessor              User                   @relation("Assessor", fields: [assessorId], references: [id])
+  questionnaireTemplate QuestionnaireTemplate? @relation(fields: [questionnaireTemplateId], references: [id])
+  assignments           AssessmentAssignment[]
+  questions             AssessmentQuestion[]
+  answers               Answer[]
 
-  responses AssessmentResponse[]
-  report    Report?
-  result    AssessmentResult?
-  history   AssessmentHistory[]
+  responses   AssessmentResponse[]
+  report      Report?
+  result      AssessmentResult?
+  history     AssessmentHistory[]
   actionPlans ActionPlan[]
   risks       Risk[]
+  pdtis       PDTI[]
 
   @@index([companyId, status])
   @@index([companyId, completedAt])
 }
 
 model Risk {
-  id                  Int             @id @default(autoincrement())
+  id                  Int              @id @default(autoincrement())
   assessmentId        Int
   companyId           Int
   title               String
@@ -308,9 +299,9 @@ model Risk {
   impact              RiskImpact
   riskScore           Int
   riskLevel           String
-  status              RiskStatus      @default(IDENTIFICADO)
+  status              RiskStatus       @default(IDENTIFICADO)
   treatment           String?
-  responsibleId       String?         @db.Uuid
+  responsibleId       String?          @db.Uuid
   reviewDate          DateTime?
   closedAt            DateTime?
   // TIC fields
@@ -327,8 +318,8 @@ model Risk {
   residualImpact      RiskImpact?
   residualScore       Int?
   residualLevel       String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   assessment  Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -343,32 +334,34 @@ model Risk {
 }
 
 model ActionPlan {
-  id                  Int                @id @default(autoincrement())
-  assessmentId        Int
-  companyId           Int
-  title               String
-  description         String
-  category            String
-  frameworkRef        String?
-  priority            ActionPlanPriority @default(MEDIA)
-  status              ActionPlanStatus   @default(PENDENTE)
-  responsibleId       String?            @db.Uuid
-  dueDate             DateTime?
-  completedAt         DateTime?
-  observations        String?
+  id               Int                @id @default(autoincrement())
+  assessmentId     Int
+  companyId        Int
+  title            String
+  description      String
+  category         String
+  frameworkRef     String?
+  priority         ActionPlanPriority @default(MEDIA)
+  status           ActionPlanStatus   @default(PENDENTE)
+  responsibleId    String?            @db.Uuid
+  dueDate          DateTime?
+  completedAt      DateTime?
+  observations     String?
   // 5W2H Fields
-  whatObjective       String?
-  whyJustification    String?
-  whereLocation       String?
-  howMethod           String?
-  howMuchCost         Decimal?           @db.Decimal(12, 2)
-  howMuchCurrency     String?            @default("BRL")
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  whatObjective    String?
+  whyJustification String?
+  whereLocation    String?
+  howMethod        String?
+  howMuchCost      Decimal?           @db.Decimal(12, 2)
+  howMuchCurrency  String?            @default("BRL")
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   assessment  Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   responsible User?      @relation("ActionPlanResponsible", fields: [responsibleId], references: [id])
+
+  pdtiActions PDTIAction[] @relation("PDTIActionPlan")
 
   @@index([assessmentId])
   @@index([companyId])
@@ -377,17 +370,107 @@ model ActionPlan {
   @@index([responsibleId])
 }
 
-model AssessmentQuestion {
+model PDTI {
+  id             Int      @id @default(autoincrement())
+  companyId      Int
+  assessmentId   Int?
+  createdById    String?  @db.Uuid
+  title          String
+  year           Int?
+  status         String   @default("RASCUNHO")
+  vision         String?
+  mission        String?
+  strategicGoals String?
+  summary        String?
+  generatedBy    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assessment Assessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  creator    User?       @relation("PDTICreator", fields: [createdById], references: [id])
+
+  objectives PDTIObjective[]
+  indicators PDTIIndicator[]
+
+  @@index([companyId])
+  @@index([assessmentId])
+  @@index([createdById])
+}
+
+model PDTIObjective {
+  id          Int       @id @default(autoincrement())
+  pdtiId      Int
+  title       String
+  description String?
+  priority    String?
+  dueDate     DateTime?
+  status      String    @default("ATIVO")
+  targetValue String?
+  actualValue String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  pdti PDTI @relation(fields: [pdtiId], references: [id], onDelete: Cascade)
+
+  actions    PDTIAction[]
+  indicators PDTIIndicator[]
+
+  @@index([pdtiId])
+}
+
+model PDTIAction {
+  id           Int       @id @default(autoincrement())
+  objectiveId  Int
+  actionPlanId Int?
+  title        String
+  description  String?
+  priority     String?
+  status       String    @default("PLANEJADO")
+  dueDate      DateTime?
+  assignedTo   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  objective  PDTIObjective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  actionPlan ActionPlan?   @relation("PDTIActionPlan", fields: [actionPlanId], references: [id], onDelete: SetNull)
+
+  @@index([objectiveId])
+  @@index([actionPlanId])
+}
+
+model PDTIIndicator {
   id           Int      @id @default(autoincrement())
+  pdtiId       Int
+  objectiveId  Int?
+  name         String
+  formula      String?
+  unit         String?
+  baseline     String?
+  target       String?
+  currentValue String?
+  frequency    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  pdti      PDTI           @relation(fields: [pdtiId], references: [id], onDelete: Cascade)
+  objective PDTIObjective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+
+  @@index([pdtiId])
+  @@index([objectiveId])
+}
+
+model AssessmentQuestion {
+  id           Int               @id @default(autoincrement())
   assessmentId Int
   text         String
   category     QuestionCategory?
   order        Int?
   responseType ResponseType
-  weight       Decimal  @db.Decimal(3, 2)
-  createdAt    DateTime @default(now())
+  weight       Decimal           @db.Decimal(3, 2)
+  createdAt    DateTime          @default(now())
 
-  assessment Assessment               @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   options    AssessmentQuestionOption[]
   responses  AssessmentResponse[]
   answers    Answer[]
@@ -403,7 +486,7 @@ model AssessmentQuestionOption {
   order                Int?
 
   question AssessmentQuestion @relation(fields: [assessmentQuestionId], references: [id], onDelete: Cascade)
-  answers  Answer[]          @relation("AnswerSelectedOption")
+  answers  Answer[]           @relation("AnswerSelectedOption")
 
   @@index([assessmentQuestionId])
 }
@@ -424,38 +507,35 @@ model Answer {
   @@index([assessmentId, answeredBy])
 }
 
-
 model AssessmentResponse {
-  id                 Int       @id @default(autoincrement())
-  assessmentId       Int
+  id                   Int       @id @default(autoincrement())
+  assessmentId         Int
   /// Legacy single-evaluator assessments (no template).
-  questionId         Int?
+  questionId           Int?
   /// Cloned assessment question id (template-based).
   assessmentQuestionId Int?
   /// Selected cloned option id.
-  selectedOptionId   Int?
-  userId             String?   @db.Uuid
-  questionVersion    Int
-  responseValue      String
-  score              Decimal   @db.Decimal(5, 2)
-  evidence           String?
-  evidenceFileUrl    String?
-  observation        String?
-  answeredAt         DateTime?
-  createdAt          DateTime  @default(now())
+  selectedOptionId     Int?
+  userId               String?   @db.Uuid
+  questionVersion      Int
+  responseValue        String
+  score                Decimal   @db.Decimal(5, 2)
+  evidence             String?
+  evidenceFileUrl      String?
+  observation          String?
+  answeredAt           DateTime?
+  createdAt            DateTime  @default(now())
 
-  assessment       Assessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  question         Question?         @relation(fields: [questionId], references: [id])
+  assessment         Assessment          @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question           Question?           @relation(fields: [questionId], references: [id])
   assessmentQuestion AssessmentQuestion? @relation(fields: [assessmentQuestionId], references: [id])
-  user             User?             @relation(fields: [userId], references: [id])
+  user               User?               @relation(fields: [userId], references: [id])
 
   evidenceFiles EvidenceFile[]
 
   @@index([assessmentId, userId])
   @@index([assessmentId, assessmentQuestionId])
 }
-
-
 
 model EvidenceFile {
   id         Int      @id @default(autoincrement())
@@ -469,33 +549,30 @@ model EvidenceFile {
   response AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
 }
 
-
-
 model Report {
-  id               Int      @id @default(autoincrement())
-  assessmentId     Int      @unique
-  totalScore       Decimal  @db.Decimal(5, 2)
-  maturityLevel    MaturityLevel
-  categoryScores   Json
-  strengths        Json
-  weaknesses       Json
-  recommendations  Json
-  generatedAt      DateTime @default(now())
+  id              Int           @id @default(autoincrement())
+  assessmentId    Int           @unique
+  totalScore      Decimal       @db.Decimal(5, 2)
+  maturityLevel   MaturityLevel
+  categoryScores  Json
+  strengths       Json
+  weaknesses      Json
+  recommendations Json
+  generatedAt     DateTime      @default(now())
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
   @@index([assessmentId])
 }
 
-
 model AssessmentHistory {
-  id             Int      @id @default(autoincrement())
+  id             Int           @id @default(autoincrement())
   companyId      Int
   assessmentId   Int
-  totalScore     Decimal  @db.Decimal(5, 2)
+  totalScore     Decimal       @db.Decimal(5, 2)
   maturityLevel  MaturityLevel
   categoryScores Json
-  assessedAt     DateTime @default(now())
+  assessedAt     DateTime      @default(now())
 
   company    Company    @relation(fields: [companyId], references: [id])
   assessment Assessment @relation(fields: [assessmentId], references: [id])
@@ -513,19 +590,19 @@ model AssessmentResult {
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  userId     String?  @db.Uuid
-  userEmail  String?
-  userRole   String?
-  action     String
-  entity     String?
-  entityId   String?
-  ipAddress  String?
-  userAgent  String?
-  payload    Json?
-  success    Boolean  @default(true)
-  errorMsg   String?
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  userId    String?  @db.Uuid
+  userEmail String?
+  userRole  String?
+  action    String
+  entity    String?
+  entityId  String?
+  ipAddress String?
+  userAgent String?
+  payload   Json?
+  success   Boolean  @default(true)
+  errorMsg  String?
+  createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
 

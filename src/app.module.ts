@@ -19,6 +19,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RisksModule } from './risks/risks.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { PdtiModule } from './pdti/pdti.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     ActionPlansModule,
     RisksModule,
     AnalyticsModule,
+    PdtiModule,
   ],
   controllers: [AppController],
   providers: [
