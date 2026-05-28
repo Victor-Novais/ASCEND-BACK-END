@@ -5,6 +5,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActionPlan5W2HRow } from './dto/action-plan-5w2h.dto';
 import { CreateActionPlanDto } from './dto/create-action-plan.dto';
 import { FilterActionPlanDto } from './dto/filter-action-plan.dto';
 import { UpdateActionPlanDto } from './dto/update-action-plan.dto';
@@ -30,6 +31,13 @@ export class ActionPlansService {
       responsibleId: dto.responsibleId,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
       observations: dto.observations,
+      whatObjective: dto.whatObjective,
+      whyJustification: dto.whyJustification,
+      whereLocation: dto.whereLocation,
+      howMethod: dto.howMethod,
+      howMuchCost:
+        dto.howMuchCost !== undefined ? new Prisma.Decimal(dto.howMuchCost) : undefined,
+      howMuchCurrency: dto.howMuchCurrency,
     };
 
     return this.prisma.actionPlan.create({
@@ -82,19 +90,94 @@ export class ActionPlansService {
       throw new NotFoundException(`Action plan with id '${id}' not found`);
     }
 
+    const data: Prisma.ActionPlanUncheckedUpdateInput = {
+      ...dto,
+      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      completedAt: dto.status === ActionPlanStatus.CONCLUIDO ? new Date() : undefined,
+      howMuchCost:
+        dto.howMuchCost !== undefined ? new Prisma.Decimal(dto.howMuchCost) : undefined,
+    };
+
     return this.prisma.actionPlan.update({
       where: { id },
-      data: {
-        ...dto,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        completedAt: dto.status === ActionPlanStatus.CONCLUIDO ? new Date() : undefined,
-      },
+      data,
       include: {
         assessment: true,
         company: true,
         responsible: true,
       },
     });
+  }
+
+  async exportTo5W2H(filters: FilterActionPlanDto): Promise<ActionPlan5W2HRow[]> {
+    const rows = await this.prisma.actionPlan.findMany({
+      where: {
+        ...(filters.companyId !== undefined ? { companyId: filters.companyId } : {}),
+        ...(filters.assessmentId !== undefined ? { assessmentId: filters.assessmentId } : {}),
+        ...(filters.status !== undefined ? { status: filters.status } : {}),
+        ...(filters.priority !== undefined ? { priority: filters.priority } : {}),
+      },
+      include: {
+        company: true,
+        responsible: true,
+      },
+    });
+
+    return rows.map((plan) => ({
+      id: plan.id,
+      oque: plan.whatObjective ?? plan.title ?? '',
+      porque: plan.whyJustification ?? plan.description ?? '',
+      quem: plan.responsible?.name ?? '',
+      onde: plan.whereLocation ?? '',
+      quando: plan.dueDate ? this.formatDate(plan.dueDate) : '',
+      como: plan.howMethod ?? '',
+      quantoCusta: this.formatCurrency(plan.howMuchCost, plan.howMuchCurrency),
+      status: plan.status,
+      prioridade: plan.priority,
+      empresa: plan.company?.name ?? '',
+      categoria: plan.category,
+    }));
+  }
+
+  private formatDate(date: Date | string | null | undefined): string {
+    if (!date) {
+      return '';
+    }
+
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return '';
+    }
+
+    return parsedDate.toLocaleDateString('pt-BR');
+  }
+
+  private formatCurrency(
+    amount: Prisma.Decimal | number | null | undefined,
+    currencyCode: string | null | undefined,
+  ): string {
+    if (amount === null || amount === undefined) {
+      return '';
+    }
+
+    const numericAmount =
+      amount instanceof Prisma.Decimal ? Number(amount.toString()) : Number(amount);
+
+    if (Number.isNaN(numericAmount)) {
+      return '';
+    }
+
+    const targetCurrency = (currencyCode ?? 'BRL').toUpperCase();
+
+    try {
+      return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: targetCurrency,
+      }).format(numericAmount);
+    } catch {
+      return `${targetCurrency} ${numericAmount.toFixed(2)}`;
+    }
   }
 
   async remove(id: number) {

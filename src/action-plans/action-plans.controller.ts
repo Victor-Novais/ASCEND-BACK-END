@@ -44,6 +44,12 @@ export class ActionPlansController {
     );
   }
 
+  @Get('export/5w2h')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  exportTo5W2H(@Query() filters: FilterActionPlanDto) {
+    return this.actionPlansService.exportTo5W2H(filters);
+  }
+
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   findAll(@Query() filters: FilterActionPlanDto) {

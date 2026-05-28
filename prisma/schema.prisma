@@ -329,21 +329,28 @@ model Risk {
 }
 
 model ActionPlan {
-  id            Int                @id @default(autoincrement())
-  assessmentId  Int
-  companyId     Int
-  title         String
-  description   String
-  category      String
-  frameworkRef  String?
-  priority      ActionPlanPriority @default(MEDIA)
-  status        ActionPlanStatus   @default(PENDENTE)
-  responsibleId String?            @db.Uuid
-  dueDate       DateTime?
-  completedAt   DateTime?
-  observations  String?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  id                  Int                @id @default(autoincrement())
+  assessmentId        Int
+  companyId           Int
+  title               String
+  description         String
+  category            String
+  frameworkRef        String?
+  priority            ActionPlanPriority @default(MEDIA)
+  status              ActionPlanStatus   @default(PENDENTE)
+  responsibleId       String?            @db.Uuid
+  dueDate             DateTime?
+  completedAt         DateTime?
+  observations        String?
+  // 5W2H Fields
+  whatObjective       String?
+  whyJustification    String?
+  whereLocation       String?
+  howMethod           String?
+  howMuchCost         Decimal?           @db.Decimal(12, 2)
+  howMuchCurrency     String?            @default("BRL")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   assessment  Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)

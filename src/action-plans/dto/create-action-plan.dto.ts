@@ -53,4 +53,29 @@ export class CreateActionPlanDto {
   @IsOptional()
   @IsString()
   observations?: string;
+
+  @IsOptional()
+  @IsString()
+  whatObjective?: string;
+
+  @IsOptional()
+  @IsString()
+  whyJustification?: string;
+
+  @IsOptional()
+  @IsString()
+  whereLocation?: string;
+
+  @IsOptional()
+  @IsString()
+  howMethod?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  howMuchCost?: number;
+
+  @IsOptional()
+  @IsString()
+  howMuchCurrency?: string;
 }
