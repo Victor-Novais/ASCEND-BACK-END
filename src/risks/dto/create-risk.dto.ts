@@ -55,4 +55,58 @@ export class CreateRiskDto {
   @IsOptional()
   @IsDateString()
   reviewDate?: string;
+
+  @IsOptional()
+  @IsString()
+  assetCategory?: string;
+
+  @IsOptional()
+  @IsString()
+  assetName?: string;
+
+  @IsOptional()
+  @IsString()
+  threat?: string;
+
+  @IsOptional()
+  @IsString()
+  vulnerability?: string;
+
+  @IsOptional()
+  @IsEnum(RiskProbability)
+  inherentProbability?: RiskProbability;
+
+  @IsOptional()
+  @IsEnum(RiskImpact)
+  inherentImpact?: RiskImpact;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  inherentScore?: number;
+
+  @IsOptional()
+  @IsString()
+  existingControls?: string;
+
+  @IsOptional()
+  @IsString()
+  proposedControls?: string;
+
+  @IsOptional()
+  @IsEnum(RiskProbability)
+  residualProbability?: RiskProbability;
+
+  @IsOptional()
+  @IsEnum(RiskImpact)
+  residualImpact?: RiskImpact;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  residualScore?: number;
+
+  @IsOptional()
+  @IsString()
+  residualLevel?: string;
 }

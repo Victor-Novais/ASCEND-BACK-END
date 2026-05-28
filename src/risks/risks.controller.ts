@@ -48,6 +48,12 @@ export class RisksController {
     return this.risksService.getStats(companyId != null ? Number(companyId) : undefined);
   }
 
+  @Get('export')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  exportRisks(@Query() filters: FilterRiskDto) {
+    return this.risksService.exportRisks(filters);
+  }
+
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   findAll(@Query() filters: FilterRiskDto) {

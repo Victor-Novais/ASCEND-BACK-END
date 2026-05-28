@@ -297,24 +297,38 @@ model Assessment {
 }
 
 model Risk {
-  id            Int             @id @default(autoincrement())
-  assessmentId  Int
-  companyId     Int
-  title         String
-  description   String
-  category      String
-  frameworkRef  String?
-  probability   RiskProbability
-  impact        RiskImpact
-  riskScore     Int
-  riskLevel     String
-  status        RiskStatus      @default(IDENTIFICADO)
-  treatment     String?
-  responsibleId String?         @db.Uuid
-  reviewDate    DateTime?
-  closedAt      DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                  Int             @id @default(autoincrement())
+  assessmentId        Int
+  companyId           Int
+  title               String
+  description         String
+  category            String
+  frameworkRef        String?
+  probability         RiskProbability
+  impact              RiskImpact
+  riskScore           Int
+  riskLevel           String
+  status              RiskStatus      @default(IDENTIFICADO)
+  treatment           String?
+  responsibleId       String?         @db.Uuid
+  reviewDate          DateTime?
+  closedAt            DateTime?
+  // TIC fields
+  assetCategory       String?
+  assetName           String?
+  threat              String?
+  vulnerability       String?
+  inherentProbability RiskProbability?
+  inherentImpact      RiskImpact?
+  inherentScore       Int?
+  existingControls    String?
+  proposedControls    String?
+  residualProbability RiskProbability?
+  residualImpact      RiskImpact?
+  residualScore       Int?
+  residualLevel       String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   assessment  Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)

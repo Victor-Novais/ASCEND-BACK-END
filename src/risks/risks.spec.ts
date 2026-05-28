@@ -62,6 +62,9 @@ describe('RisksService', () => {
     company: {
       findUnique: jest.fn(),
     },
+    report: {
+      findFirst: jest.fn(),
+    },
     user: {
       findUnique: jest.fn(),
     },
@@ -112,6 +115,23 @@ describe('RisksService', () => {
   });
 
   it('generates risks from assessment weaknesses', async () => {
+    prisma.report.findFirst.mockResolvedValue({
+      id: 9,
+      assessmentId: 10,
+      totalScore: 40,
+      maturityLevel: 'ARTESANAL',
+      categoryScores: {},
+      strengths: [],
+      weaknesses: [
+        {
+          category: QuestionCategory.SEGURANCA,
+          title: 'Improvement area: Security',
+          summary: 'This is one of the lowest maturity categories (40).',
+        },
+      ],
+      recommendations: [],
+      generatedAt: new Date('2026-04-01T00:00:00.000Z'),
+    });
     prisma.assessment.findUnique.mockResolvedValue({
       id: 10,
       companyId: 5,
@@ -158,35 +178,64 @@ describe('RisksService', () => {
         data: expect.objectContaining({
           assessmentId: 10,
           companyId: 5,
-          category: QuestionCategory.SEGURANCA,
           probability: RiskProbability.MEDIA,
-          impact: RiskImpact.ALTO,
-          riskScore: 12,
-          riskLevel: 'ALTO',
-          frameworkRef: 'COBIT APO12',
+          impact: RiskImpact.MEDIO,
+          riskScore: 9,
+          riskLevel: 'MEDIO',
+          inherentProbability: RiskProbability.MEDIA,
+          inherentImpact: RiskImpact.MEDIO,
+          inherentScore: 9,
+          residualProbability: RiskProbability.MEDIA,
+          residualImpact: RiskImpact.MEDIO,
+          residualScore: 9,
+          residualLevel: 'MEDIO',
         }),
       }),
     );
     expect(result).toHaveLength(1);
   });
 
-  it('returns aggregated stats', async () => {
+  it('returns aggregated stats with expanded TIC metrics', async () => {
     prisma.risk.count.mockResolvedValue(4);
     prisma.risk.groupBy
       .mockResolvedValueOnce([
-        { riskLevel: 'CRITICO', _count: { _all: 1 } },
-        { riskLevel: 'ALTO', _count: { _all: 2 } },
-        { riskLevel: 'MEDIO', _count: { _all: 1 } },
+        { riskLevel: 'CRITICO', _count: { riskLevel: 1 } },
+        { riskLevel: 'ALTO', _count: { riskLevel: 2 } },
+        { riskLevel: 'MEDIO', _count: { riskLevel: 1 } },
       ])
       .mockResolvedValueOnce([
-        { status: RiskStatus.IDENTIFICADO, _count: { _all: 2 } },
-        { status: RiskStatus.MITIGADO, _count: { _all: 1 } },
-        { status: RiskStatus.EM_TRATAMENTO, _count: { _all: 1 } },
+        { status: RiskStatus.IDENTIFICADO, _count: { status: 2 } },
+        { status: RiskStatus.MITIGADO, _count: { status: 1 } },
+        { status: RiskStatus.EM_TRATAMENTO, _count: { status: 1 } },
       ])
       .mockResolvedValueOnce([
-        { category: QuestionCategory.SEGURANCA, _count: { _all: 3 } },
-        { category: QuestionCategory.GOVERNANCA, _count: { _all: 1 } },
+        { category: QuestionCategory.SEGURANCA, _count: { category: 3 } },
+        { category: QuestionCategory.GOVERNANCA, _count: { category: 1 } },
       ]);
+    prisma.risk.findMany.mockResolvedValue([
+      {
+        inherentScore: 20,
+        residualScore: 8,
+        riskScore: 12,
+        probability: RiskProbability.MEDIA,
+        impact: RiskImpact.ALTO,
+        inherentProbability: RiskProbability.ALTA,
+        inherentImpact: RiskImpact.ALTO,
+        residualProbability: RiskProbability.MEDIA,
+        residualImpact: RiskImpact.MEDIO,
+      },
+      {
+        inherentScore: 5,
+        residualScore: 5,
+        riskScore: 6,
+        probability: RiskProbability.BAIXA,
+        impact: RiskImpact.MEDIO,
+        inherentProbability: RiskProbability.BAIXA,
+        inherentImpact: RiskImpact.MEDIO,
+        residualProbability: RiskProbability.BAIXA,
+        residualImpact: RiskImpact.MEDIO,
+      },
+    ]);
 
     const result = await service.getStats();
 
@@ -212,6 +261,9 @@ describe('RisksService', () => {
         INFRAESTRUTURA: 0,
         CULTURA: 0,
       },
+      inherentCritical: 1,
+      residualCritical: 0,
+      riskReduction: 30,
     });
   });
 });
