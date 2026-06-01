@@ -20,6 +20,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RisksModule } from './risks/risks.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PdtiModule } from './pdti/pdti.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PdtiModule } from './pdti/pdti.module';
     RisksModule,
     AnalyticsModule,
     PdtiModule,
+    ExportsModule,
   ],
   controllers: [AppController],
   providers: [
