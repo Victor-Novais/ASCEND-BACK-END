@@ -28,8 +28,11 @@ export class UsersService {
     }
   }
 
-  async findAll(): Promise<User[]> {
+  async findAll(companyId?: number): Promise<User[]> {
     return this.prisma.user.findMany({
+      where: companyId
+        ? { assignments: { some: { companyId } } }
+        : {},
       orderBy: { createdAt: 'desc' },
     });
   }

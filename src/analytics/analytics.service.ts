@@ -19,6 +19,10 @@ export class AnalyticsService {
       orderBy: { completedAt: 'asc' },
     });
 
+    if (assessments.length === 0) {
+      return [];
+    }
+
     return assessments.map((assessment) => ({
       assessmentId: assessment.id,
       completedAt: assessment.completedAt,
@@ -28,13 +32,30 @@ export class AnalyticsService {
     }));
   }
 
-  async getCompanyComparison(companyIds: number[]) {
+  async getCompanyComparison(companyIds: number[], currentUser?: JwtPayload) {
     if (companyIds.length === 0) {
       return [];
     }
 
+    const allowedCompanyIds =
+      currentUser?.role === Role.CLIENTE
+        ? (
+            await this.prisma.company.findMany({
+              where: {
+                id: { in: companyIds },
+                ...userCompanyScope(currentUser.sub),
+              },
+              select: { id: true },
+            })
+          ).map((company) => company.id)
+        : companyIds;
+
+    if (allowedCompanyIds.length === 0) {
+      return [];
+    }
+
     const rows = await Promise.all(
-      companyIds.map(async (companyId) => {
+      allowedCompanyIds.map(async (companyId) => {
         const assessment = await this.prisma.assessment.findFirst({
           where: {
             companyId,
@@ -233,7 +254,12 @@ export class AnalyticsService {
     });
 
     if (!latestAssessment) {
-      throw new NotFoundException('Nenhum assessment concluído encontrado para esta empresa');
+      return {
+        companyName: company.name,
+        categoryScores: {},
+        segmentAvgScores: {},
+        categories: [],
+      };
     }
 
     const benchmark = await this.getBenchmarkBySegment(company.segment);

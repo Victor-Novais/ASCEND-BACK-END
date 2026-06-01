@@ -29,17 +29,17 @@ export class AnalyticsController {
   }
 
   @Get('comparison')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
-  getCompanyComparison(@Query('ids') ids: string) {
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  getCompanyComparison(@Query('ids') ids: string, @CurrentUser() user: JwtPayload) {
     const companyIds = (ids ?? '')
       .split(',')
       .map((id) => Number(id.trim()))
       .filter((id) => Number.isInteger(id) && id > 0);
-    return this.analyticsService.getCompanyComparison(companyIds);
+    return this.analyticsService.getCompanyComparison(companyIds, user);
   }
 
   @Get('benchmark/:segment')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   getBenchmarkBySegment(@Param('segment') segment: string) {
     return this.analyticsService.getBenchmarkBySegment(segment);
   }
