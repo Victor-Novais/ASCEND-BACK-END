@@ -25,19 +25,19 @@ export class ActionPlansController {
   constructor(private readonly actionPlansService: ActionPlansService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   create(@Body() dto: CreateActionPlanDto) {
     return this.actionPlansService.create(dto);
   }
 
   @Post('from-assessment/:id')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   generateFromAssessment(@Param('id', ParseIntPipe) id: number) {
     return this.actionPlansService.generateFromAssessment(id);
   }
 
   @Get('stats')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   getDashboardStats(@Query('companyId') companyId?: string) {
     return this.actionPlansService.getDashboardStats(
       companyId != null ? Number(companyId) : undefined,
@@ -63,13 +63,13 @@ export class ActionPlansController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateActionPlanDto) {
     return this.actionPlansService.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.actionPlansService.remove(id);
   }

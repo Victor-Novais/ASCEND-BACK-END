@@ -27,13 +27,13 @@ export class PdtiController {
   constructor(private readonly pdtiService: PdtiService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   create(@Body() dto: CreatePdtiDto, @CurrentUser() user: JwtPayload) {
     return this.pdtiService.create(dto, user);
   }
 
   @Post('generate/:assessmentId')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   generateFromAssessmentRoute(
     @Param('assessmentId', ParseIntPipe) assessmentId: number,
     @CurrentUser() user: JwtPayload,
@@ -42,7 +42,7 @@ export class PdtiController {
   }
 
   @Post('from-assessment/:id')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   generateFromAssessmentAlias(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: JwtPayload,
@@ -69,13 +69,13 @@ export class PdtiController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePdtiDto) {
     return this.pdtiService.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.pdtiService.remove(id);
   }

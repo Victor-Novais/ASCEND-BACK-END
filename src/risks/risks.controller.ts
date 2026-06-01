@@ -25,25 +25,25 @@ export class RisksController {
   constructor(private readonly risksService: RisksService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   create(@Body() dto: CreateRiskDto) {
     return this.risksService.create(dto);
   }
 
   @Post('from-assessment/:id')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   generateFromAssessment(@Param('id', ParseIntPipe) id: number) {
     return this.risksService.generateFromAssessment(id);
   }
 
   @Get('matrix')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   getRiskMatrix(@Query('companyId') companyId?: string) {
     return this.risksService.getRiskMatrix(companyId != null ? Number(companyId) : undefined);
   }
 
   @Get('stats')
-  @Roles(Role.ADMIN, Role.AVALIADOR)
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   getStats(@Query('companyId') companyId?: string) {
     return this.risksService.getStats(companyId != null ? Number(companyId) : undefined);
   }
