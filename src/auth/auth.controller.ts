@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -17,6 +17,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
+  @HttpCode(200)
   @Throttle({ default: { limit: 5, ttl: 300000 } })
   login(@Body() loginDto: LoginDto): Promise<{ accessToken: string; refreshToken: string }> {
     return this.authService.login(loginDto);
@@ -28,12 +29,14 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @HttpCode(200)
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refreshAccessToken(dto.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
+  @HttpCode(200)
   logout(@Body() dto: LogoutDto, @CurrentUser() user: JwtPayload) {
     return this.authService.logout(user.sub, dto.refreshToken);
   }
