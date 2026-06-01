@@ -4,6 +4,8 @@ import {
   ActionPlanStatus,
   Prisma,
 } from '@prisma/client';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActionPlan5W2HRow } from './dto/action-plan-5w2h.dto';
 import { CreateActionPlanDto } from './dto/create-action-plan.dto';
@@ -19,7 +21,31 @@ type ReportPayload = {
 export class ActionPlansService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateActionPlanDto) {
+  private actionPlanTenantFilter(currentUser?: JwtPayload): Prisma.ActionPlanWhereInput {
+    if (!currentUser || isAdmin({ id: currentUser.sub, role: currentUser.role })) {
+      return {};
+    }
+
+    return {
+      company: userCompanyScope(currentUser.sub),
+    };
+  }
+
+  async create(dto: CreateActionPlanDto, currentUser?: JwtPayload) {
+    if (currentUser && !isAdmin({ id: currentUser.sub, role: currentUser.role })) {
+      const company = await this.prisma.company.findFirst({
+        where: {
+          id: dto.companyId,
+          ...userCompanyScope(currentUser.sub),
+        },
+        select: { id: true },
+      });
+
+      if (!company) {
+        throw new NotFoundException(`Company with id '${dto.companyId}' not found`);
+      }
+    }
+
     const data: Prisma.ActionPlanUncheckedCreateInput = {
       assessmentId: dto.assessmentId,
       companyId: dto.companyId,
@@ -51,21 +77,25 @@ export class ActionPlansService {
     });
   }
 
-  async findAll(filters: FilterActionPlanDto) {
+  async findAll(filters: FilterActionPlanDto, currentUser?: JwtPayload) {
     return this.prisma.actionPlan.findMany({
       where: {
         ...(filters.companyId !== undefined ? { companyId: filters.companyId } : {}),
         ...(filters.assessmentId !== undefined ? { assessmentId: filters.assessmentId } : {}),
         ...(filters.status !== undefined ? { status: filters.status } : {}),
         ...(filters.priority !== undefined ? { priority: filters.priority } : {}),
+        ...this.actionPlanTenantFilter(currentUser),
       },
       include: { responsible: true },
     });
   }
 
-  async findOne(id: number) {
-    const actionPlan = await this.prisma.actionPlan.findUnique({
-      where: { id },
+  async findOne(id: number, currentUser?: JwtPayload) {
+    const actionPlan = await this.prisma.actionPlan.findFirst({
+      where: {
+        id,
+        ...this.actionPlanTenantFilter(currentUser),
+      },
       include: {
         assessment: true,
         company: true,
@@ -109,13 +139,14 @@ export class ActionPlansService {
     });
   }
 
-  async exportTo5W2H(filters: FilterActionPlanDto): Promise<ActionPlan5W2HRow[]> {
+  async exportTo5W2H(filters: FilterActionPlanDto, currentUser?: JwtPayload): Promise<ActionPlan5W2HRow[]> {
     const rows = await this.prisma.actionPlan.findMany({
       where: {
         ...(filters.companyId !== undefined ? { companyId: filters.companyId } : {}),
         ...(filters.assessmentId !== undefined ? { assessmentId: filters.assessmentId } : {}),
         ...(filters.status !== undefined ? { status: filters.status } : {}),
         ...(filters.priority !== undefined ? { priority: filters.priority } : {}),
+        ...this.actionPlanTenantFilter(currentUser),
       },
       include: {
         company: true,
@@ -196,8 +227,11 @@ export class ActionPlansService {
     });
   }
 
-  async getDashboardStats(companyId?: number) {
-    const where = companyId ? { companyId } : {};
+  async getDashboardStats(companyId?: number, currentUser?: JwtPayload) {
+    const where = {
+      ...(companyId ? { companyId } : {}),
+      ...this.actionPlanTenantFilter(currentUser),
+    };
 
     const [total, porStatus, porPrioridade, vencendo] = await Promise.all([
       this.prisma.actionPlan.count({ where }),
@@ -246,7 +280,7 @@ export class ActionPlansService {
     };
   }
 
-  async generateFromAssessment(assessmentId: number) {
+  async generateFromAssessment(assessmentId: number, currentUser?: JwtPayload) {
     const report = await this.prisma.report.findFirst({
       where: { assessmentId },
     });
@@ -255,8 +289,15 @@ export class ActionPlansService {
       throw new NotFoundException(`Report for assessment '${assessmentId}' not found`);
     }
 
-    const assessment = await this.prisma.assessment.findUnique({
-      where: { id: assessmentId },
+    const assessmentWhere: Prisma.AssessmentWhereInput = currentUser && !isAdmin({ id: currentUser.sub, role: currentUser.role })
+      ? {
+          id: assessmentId,
+          company: userCompanyScope(currentUser.sub),
+        }
+      : { id: assessmentId };
+
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhere,
       select: { companyId: true },
     });
 

@@ -11,7 +11,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ActionPlansService } from './action-plans.service';
@@ -26,40 +28,47 @@ export class ActionPlansController {
 
   @Post()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  create(@Body() dto: CreateActionPlanDto) {
-    return this.actionPlansService.create(dto);
+  create(@Body() dto: CreateActionPlanDto, @CurrentUser() user: JwtPayload) {
+    return this.actionPlansService.create(dto, user);
   }
 
   @Post('from-assessment/:id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  generateFromAssessment(@Param('id', ParseIntPipe) id: number) {
-    return this.actionPlansService.generateFromAssessment(id);
+  generateFromAssessment(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.actionPlansService.generateFromAssessment(id, user);
   }
 
   @Get('stats')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  getDashboardStats(@Query('companyId') companyId?: string) {
+  getDashboardStats(
+    @CurrentUser() user: JwtPayload,
+    @Query('companyId') companyId?: string,
+  ) {
     return this.actionPlansService.getDashboardStats(
       companyId != null ? Number(companyId) : undefined,
+      user,
     );
   }
 
   @Get('export/5w2h')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  exportTo5W2H(@Query() filters: FilterActionPlanDto) {
-    return this.actionPlansService.exportTo5W2H(filters);
+  exportTo5W2H(@CurrentUser() user: JwtPayload, @Query() filters: FilterActionPlanDto) {
+    return this.actionPlansService.exportTo5W2H(filters, user);
   }
 
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findAll(@Query() filters: FilterActionPlanDto) {
-    return this.actionPlansService.findAll(filters);
+  findAll(@CurrentUser() user: JwtPayload, @Query() filters: FilterActionPlanDto) {
+    return this.actionPlansService.findAll(filters, user);
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.actionPlansService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.actionPlansService.findOne(id, user);
   }
 
   @Patch(':id')

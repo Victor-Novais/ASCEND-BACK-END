@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePdtiDto } from './dto/create-pdti.dto';
 import { FilterPdtiDto } from './dto/filter-pdti.dto';
@@ -29,9 +30,14 @@ export class PdtiService {
     });
   }
 
-  async findAll(filters: FilterPdtiDto) {
+  async findAll(filters: FilterPdtiDto, currentUser: JwtPayload) {
+    const tenantFilter = isAdmin({ id: currentUser.sub, role: currentUser.role })
+      ? {}
+      : { company: userCompanyScope(currentUser.sub) };
+
     return this.prisma.pDTI.findMany({
       where: {
+        ...tenantFilter,
         ...(filters.companyId !== undefined ? { companyId: filters.companyId } : {}),
         ...(filters.assessmentId !== undefined ? { assessmentId: filters.assessmentId } : {}),
         ...(filters.year !== undefined ? { year: filters.year } : {}),
@@ -42,9 +48,16 @@ export class PdtiService {
     });
   }
 
-  async findOne(id: number) {
-    const pdti = await this.prisma.pDTI.findUnique({
-      where: { id },
+  async findOne(id: number, currentUser: JwtPayload) {
+    const tenantFilter = isAdmin({ id: currentUser.sub, role: currentUser.role })
+      ? {}
+      : { company: userCompanyScope(currentUser.sub) };
+
+    const pdti = await this.prisma.pDTI.findFirst({
+      where: {
+        id,
+        ...tenantFilter,
+      },
       include: this.defaultInclude(),
     });
 
@@ -361,8 +374,8 @@ export class PdtiService {
     return 'PROCESSOS';
   }
 
-  async export(id: number) {
-    const pdti = await this.findOne(id);
+  async export(id: number, currentUser: JwtPayload) {
+    const pdti = await this.findOne(id, currentUser);
 
     return {
       id: pdti.id,

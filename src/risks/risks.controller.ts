@@ -11,7 +11,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreateRiskDto } from './dto/create-risk.dto';
@@ -26,44 +28,59 @@ export class RisksController {
 
   @Post()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  create(@Body() dto: CreateRiskDto) {
-    return this.risksService.create(dto);
+  create(@Body() dto: CreateRiskDto, @CurrentUser() user: JwtPayload) {
+    return this.risksService.create(dto, user);
   }
 
   @Post('from-assessment/:id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  generateFromAssessment(@Param('id', ParseIntPipe) id: number) {
-    return this.risksService.generateFromAssessment(id);
+  generateFromAssessment(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.risksService.generateFromAssessment(id, user);
   }
 
   @Get('matrix')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  getRiskMatrix(@Query('companyId') companyId?: string) {
-    return this.risksService.getRiskMatrix(companyId != null ? Number(companyId) : undefined);
+  getRiskMatrix(
+    @CurrentUser() user: JwtPayload,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.risksService.getRiskMatrix(
+      companyId != null ? Number(companyId) : undefined,
+      user,
+    );
   }
 
   @Get('stats')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  getStats(@Query('companyId') companyId?: string) {
-    return this.risksService.getStats(companyId != null ? Number(companyId) : undefined);
+  getStats(
+    @CurrentUser() user: JwtPayload,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.risksService.getStats(
+      companyId != null ? Number(companyId) : undefined,
+      user,
+    );
   }
 
   @Get('export')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  exportRisks(@Query() filters: FilterRiskDto) {
-    return this.risksService.exportRisks(filters);
+  exportRisks(@CurrentUser() user: JwtPayload, @Query() filters: FilterRiskDto) {
+    return this.risksService.exportRisks(filters, user);
   }
 
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findAll(@Query() filters: FilterRiskDto) {
-    return this.risksService.findAll(filters);
+  findAll(@CurrentUser() user: JwtPayload, @Query() filters: FilterRiskDto) {
+    return this.risksService.findAll(filters, user);
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.risksService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.risksService.findOne(id, user);
   }
 
   @Patch(':id')

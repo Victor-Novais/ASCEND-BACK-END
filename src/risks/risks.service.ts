@@ -5,6 +5,8 @@ import {
   RiskProbability,
   RiskStatus,
 } from '@prisma/client';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRiskDto } from './dto/create-risk.dto';
 import { FilterRiskDto } from './dto/filter-risk.dto';
@@ -21,7 +23,17 @@ type ReportPayloadLike = {
 export class RisksService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateRiskDto) {
+  private riskTenantFilter(currentUser?: JwtPayload): Prisma.RiskWhereInput {
+    if (!currentUser || isAdmin({ id: currentUser.sub, role: currentUser.role })) {
+      return {};
+    }
+
+    return {
+      company: userCompanyScope(currentUser.sub),
+    };
+  }
+
+  async create(dto: CreateRiskDto, currentUser?: JwtPayload) {
     const inherentProbability = dto.inherentProbability ?? dto.probability;
     const inherentImpact = dto.inherentImpact ?? dto.impact;
     const residualProbability = dto.residualProbability ?? inherentProbability;
@@ -30,6 +42,19 @@ export class RisksService {
     const currentScore = this.calculateRiskScore(dto.probability, dto.impact);
     const inherentScore = this.calculateRiskScore(inherentProbability, inherentImpact);
     const residualScore = this.calculateRiskScore(residualProbability, residualImpact);
+
+    if (currentUser && !isAdmin({ id: currentUser.sub, role: currentUser.role })) {
+      const company = await this.prisma.company.findFirst({
+        where: {
+          id: dto.companyId,
+          ...userCompanyScope(currentUser.sub),
+        },
+        select: { id: true },
+      });
+      if (!company) {
+        throw new NotFoundException(`Company with id '${dto.companyId}' not found`);
+      }
+    }
 
     return this.prisma.risk.create({
       data: {
@@ -63,7 +88,7 @@ export class RisksService {
     });
   }
 
-  async findAll(filters: FilterRiskDto) {
+  async findAll(filters: FilterRiskDto, currentUser?: JwtPayload) {
     return this.prisma.risk.findMany({
       where: {
         ...(filters.companyId !== undefined ? { companyId: filters.companyId } : {}),
@@ -71,13 +96,17 @@ export class RisksService {
         ...(filters.status !== undefined ? { status: filters.status } : {}),
         ...(filters.riskLevel !== undefined ? { riskLevel: filters.riskLevel } : {}),
         ...(filters.category !== undefined ? { category: filters.category } : {}),
+        ...this.riskTenantFilter(currentUser),
       },
     });
   }
 
-  async findOne(id: number) {
-    const risk = await this.prisma.risk.findUnique({
-      where: { id },
+  async findOne(id: number, currentUser?: JwtPayload) {
+    const risk = await this.prisma.risk.findFirst({
+      where: {
+        id,
+        ...this.riskTenantFilter(currentUser),
+      },
       include: {
         assessment: true,
         company: true,
@@ -158,7 +187,7 @@ export class RisksService {
     });
   }
 
-  async generateFromAssessment(assessmentId: number) {
+  async generateFromAssessment(assessmentId: number, currentUser?: JwtPayload) {
     const report = await this.prisma.report.findFirst({
       where: { assessmentId },
     });
@@ -167,8 +196,15 @@ export class RisksService {
       throw new NotFoundException(`Report for assessment '${assessmentId}' not found`);
     }
 
-    const assessment = await this.prisma.assessment.findUnique({
-      where: { id: assessmentId },
+    const assessmentWhere: Prisma.AssessmentWhereInput = currentUser && !isAdmin({ id: currentUser.sub, role: currentUser.role })
+      ? {
+          id: assessmentId,
+          company: userCompanyScope(currentUser.sub),
+        }
+      : { id: assessmentId };
+
+    const assessment = await this.prisma.assessment.findFirst({
+      where: assessmentWhere,
       select: { companyId: true },
     });
 
@@ -213,10 +249,11 @@ export class RisksService {
     return created;
   }
 
-  async getRiskMatrix(companyId?: number) {
+  async getRiskMatrix(companyId?: number, currentUser?: JwtPayload) {
     const risks = await this.prisma.risk.findMany({
       where: {
         ...(companyId !== undefined ? { companyId } : {}),
+        ...(this.riskTenantFilter(currentUser) as Prisma.RiskWhereInput),
         status: {
           notIn: [RiskStatus.MITIGADO, RiskStatus.ACEITO, RiskStatus.TRANSFERIDO],
         },
@@ -248,8 +285,11 @@ export class RisksService {
     return matrix;
   }
 
-  async getStats(companyId?: number) {
-    const where = companyId !== undefined ? { companyId } : {};
+  async getStats(companyId?: number, currentUser?: JwtPayload) {
+    const where = {
+      ...(companyId !== undefined ? { companyId } : {}),
+      ...(this.riskTenantFilter(currentUser) as Prisma.RiskWhereInput),
+    };
 
     const [total, porNivelRows, porStatusRows, porCategoriaRows, risks] = await Promise.all([
       this.prisma.risk.count({ where }),
@@ -359,7 +399,7 @@ export class RisksService {
     };
   }
 
-  async exportRisks(filters: FilterRiskDto) {
+  async exportRisks(filters: FilterRiskDto, currentUser?: JwtPayload) {
     const risks = await this.prisma.risk.findMany({
       where: {
         ...(filters.companyId !== undefined ? { companyId: filters.companyId } : {}),
@@ -367,6 +407,7 @@ export class RisksService {
         ...(filters.status !== undefined ? { status: filters.status } : {}),
         ...(filters.riskLevel !== undefined ? { riskLevel: filters.riskLevel } : {}),
         ...(filters.category !== undefined ? { category: filters.category } : {}),
+        ...this.riskTenantFilter(currentUser),
       },
       include: {
         company: true,

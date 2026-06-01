@@ -52,20 +52,20 @@ export class PdtiController {
 
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findAll(@Query() filters: FilterPdtiDto) {
-    return this.pdtiService.findAll(filters);
+  findAll(@Query() filters: FilterPdtiDto, @CurrentUser() user: JwtPayload) {
+    return this.pdtiService.findAll(filters, user);
   }
 
   @Get(':id/export')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  export(@Param('id', ParseIntPipe) id: number) {
-    return this.pdtiService.export(id);
+  export(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.pdtiService.export(id, user);
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.pdtiService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: JwtPayload) {
+    return this.pdtiService.findOne(id, user);
   }
 
   @Patch(':id')

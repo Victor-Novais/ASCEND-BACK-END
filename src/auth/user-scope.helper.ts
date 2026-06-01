@@ -33,6 +33,13 @@ export function companyWhereForUser(
     return { id };
   }
 
+  if (user.role === Role.CLIENTE) {
+    return {
+      id,
+      ...userCompanyScope(user.id),
+    };
+  }
+
   return {
     id,
     ...userCompanyScope(user.id),
@@ -52,6 +59,13 @@ export function assessmentWhereForUser(
       id,
       company: userCompanyScope(user.id),
       assignments: { some: { userId: user.id } },
+    };
+  }
+
+  if (user.role === Role.CLIENTE) {
+    return {
+      id,
+      company: userCompanyScope(user.id),
     };
   }
 
@@ -77,6 +91,11 @@ export function assessmentsScopeForUser(
       assignments: { some: { userId: user.id } },
     };
   }
+
+  if (user.role === Role.CLIENTE) {
+    return { company: userCompanyScope(user.id) };
+  }
+
   return { company: userCompanyScope(user.id) };
 }
 
@@ -86,6 +105,13 @@ function assessmentTenantFilter(
   if (isAdmin(user)) {
     return {};
   }
+
+  if (user.role === Role.CLIENTE) {
+    return {
+      assessment: { company: userCompanyScope(user.id) },
+    };
+  }
+
   return {
     assessment: { company: userCompanyScope(user.id) },
   };
