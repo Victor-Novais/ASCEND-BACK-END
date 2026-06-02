@@ -3,7 +3,6 @@ import { Role, User } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-import { PrismaService } from '../prisma/prisma.service';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -13,10 +12,7 @@ import { UsersService } from './users.service';
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Post()
   @Roles(Role.ADMIN)
@@ -27,15 +23,7 @@ export class UsersController {
   @Get()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   async findAll(@CurrentUser() user: JwtPayload): Promise<User[]> {
-    if (user.role === Role.CLIENTE) {
-      const assignment = await this.prisma.userCompanyAssignment.findFirst({
-        where: { userId: user.sub },
-        select: { companyId: true },
-      });
-      return this.usersService.findAll(assignment?.companyId);
-    }
-
-    return this.usersService.findAll();
+    return this.usersService.findAll(user);
   }
 
   @Get(':id')

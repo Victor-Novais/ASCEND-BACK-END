@@ -1,7 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, User } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -28,11 +29,24 @@ export class UsersService {
     }
   }
 
-  async findAll(companyId?: number): Promise<User[]> {
+  async findAll(user?: JwtPayload): Promise<User[]> {
+    if (!user || user.role === Role.ADMIN || user.role === Role.AVALIADOR) {
+      return this.prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+    }
+
+    const assignments = await this.prisma.userCompanyAssignment.findMany({
+      where: { userId: user.sub },
+      select: { companyId: true },
+    });
+
+    const companyIds = assignments.map((assignment) => assignment.companyId);
+
+    if (companyIds.length === 0) {
+      return [];
+    }
+
     return this.prisma.user.findMany({
-      where: companyId
-        ? { assignments: { some: { companyId } } }
-        : {},
+      where: { assignments: { some: { companyId: { in: companyIds } } } },
       orderBy: { createdAt: 'desc' },
     });
   }

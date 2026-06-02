@@ -37,18 +37,16 @@ export class AnalyticsService {
       return [];
     }
 
-    const allowedCompanyIds =
-      currentUser?.role === Role.CLIENTE
-        ? (
-            await this.prisma.company.findMany({
-              where: {
-                id: { in: companyIds },
-                ...userCompanyScope(currentUser.sub),
-              },
-              select: { id: true },
-            })
-          ).map((company) => company.id)
-        : companyIds;
+    let allowedCompanyIds = companyIds;
+
+    if (currentUser?.role === Role.CLIENTE) {
+      const allowed = await this.prisma.userCompanyAssignment.findMany({
+        where: { userId: currentUser.sub, companyId: { in: companyIds } },
+        select: { companyId: true },
+      });
+      const allowedIds = new Set(allowed.map((assignment) => assignment.companyId));
+      allowedCompanyIds = companyIds.filter((id) => allowedIds.has(id));
+    }
 
     if (allowedCompanyIds.length === 0) {
       return [];
@@ -255,6 +253,7 @@ export class AnalyticsService {
 
     if (!latestAssessment) {
       return {
+        radar: [],
         companyName: company.name,
         categoryScores: {},
         segmentAvgScores: {},
