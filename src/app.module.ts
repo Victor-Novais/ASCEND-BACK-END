@@ -21,6 +21,7 @@ import { RisksModule } from './risks/risks.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PdtiModule } from './pdti/pdti.module';
 import { ExportsModule } from './exports/exports.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ExportsModule } from './exports/exports.module';
     AnalyticsModule,
     PdtiModule,
     ExportsModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [
