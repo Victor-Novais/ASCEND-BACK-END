@@ -67,6 +67,25 @@ export class DocumentsController {
     return new StreamableFile(buffer);
   }
 
+  @Get('risks/excel')
+  async getRiskReportExcel(
+    @Query('companyId') companyId: string,
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    if (!companyId) throw new BadRequestException('companyId é obrigatório');
+    const id = Number(companyId);
+    if (isNaN(id)) throw new BadRequestException('companyId deve ser um número');
+
+    const buffer = await this.documentsService.generateRiskReportExcel(id, user);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="ptr-company-${id}.xlsx"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
   @Get('action-plans/pdf')
   async getActionPlanReport(
     @Query('companyId') companyId: string,

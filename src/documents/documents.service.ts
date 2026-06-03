@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
 import {
   AlignmentType,
   Document,
@@ -166,6 +167,19 @@ export class DocumentsService {
         ),
       ],
     });
+  }
+
+  private levelOrder(level: string): number {
+    const n = level.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return ({ CRITICO: 0, ALTO: 1, MEDIO: 2, BAIXO: 3 } as Record<string, number>)[n] ?? 99;
+  }
+
+  private levelArgb(level: string): string {
+    const n = level.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return (
+      ({ CRITICO: 'FFFF4C4C', ALTO: 'FFFFA040', MEDIO: 'FFFFF0A0', BAIXO: 'FFB2DFDB' } as Record<string, string>)[n] ??
+      'FFEEEEEE'
+    );
   }
 
   private async fetchPdtiForUser(pdtiId: number, user: JwtPayload) {
@@ -550,46 +564,76 @@ export class DocumentsService {
   async generateRiskReportPdf(companyId: number, user: JwtPayload): Promise<Buffer> {
     const company = await this.fetchCompanyForUser(companyId, user);
 
-    const risks = await this.prisma.risk.findMany({
+    const risks: any[] = await this.prisma.risk.findMany({
       where: { companyId },
-      include: { responsible: { select: { name: true } } },
+      include: {
+        responsible: true,
+        assessment: { include: { company: true } },
+      },
       orderBy: { riskScore: 'desc' as const },
     });
 
-    return this.createPdfBuffer((doc) => {
-      // ── Capa ────────────────────────────────────────────────────────────
-      doc.y = 200;
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(34)
-        .fillColor(CORP_BLUE)
-        .text('Relatório de Riscos', { align: 'center' });
-      doc.moveDown(1.5);
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(20)
-        .fillColor(TEXT_COLOR)
-        .text(company.name, { align: 'center' });
-      doc.moveDown(0.5);
-      doc
-        .font('Helvetica')
-        .fontSize(11)
-        .fillColor('#888888')
-        .text(
-          `Gerado em: ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`,
-          { align: 'center' },
-        );
+    const sorted: any[] = [...risks].sort(
+      (a, b) => this.levelOrder(String(a.riskLevel)) - this.levelOrder(String(b.riskLevel)),
+    );
 
-      // ── Tabela de Riscos ─────────────────────────────────────────────────
+    const levelCounts = risks.reduce<Record<string, number>>((acc, r) => {
+      const lvl = String(r.riskLevel);
+      acc[lvl] = (acc[lvl] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const uniqueLevels: string[] = [...new Set<string>(risks.map((r) => String(r.riskLevel)))].sort(
+      (a, b) => this.levelOrder(a) - this.levelOrder(b),
+    );
+
+    const risksWithControls = risks.filter(
+      (r) => r.existingControls || r.proposedControls,
+    );
+    const residualRisks = sorted.filter((r) => r.residualScore != null);
+
+    const genDate = new Date().toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    return this.createPdfBuffer((doc) => {
+      // ── Capa ─────────────────────────────────────────────────────────────
+      doc.y = 180;
+      doc.font('Helvetica-Bold').fontSize(34).fillColor(CORP_BLUE)
+         .text('Plano de Tratamento de Riscos', { align: 'center' });
+      doc.moveDown(1.5);
+      doc.font('Helvetica-Bold').fontSize(20).fillColor(TEXT_COLOR)
+         .text(company.name, { align: 'center' });
+      doc.moveDown(0.5);
+      doc.font('Helvetica').fontSize(11).fillColor('#888888')
+         .text(`Gerado em: ${genDate}`, { align: 'center' });
+
+      // ── Sumário executivo ────────────────────────────────────────────────
       doc.addPage();
-      this.drawSectionTitle(doc, 'Tabela de Riscos');
-      if (risks.length === 0) {
+      this.drawSectionTitle(doc, 'Sumário Executivo');
+      this.drawPdfTable(
+        doc,
+        ['Nível de Risco', 'Quantidade'],
+        [
+          ...uniqueLevels.map((lvl) => [lvl, String(levelCounts[lvl] ?? 0)]),
+          ['TOTAL', String(risks.length)],
+        ],
+        [5, 2],
+      );
+
+      // ── Tabela detalhada por nível ───────────────────────────────────────
+      doc.addPage();
+      this.drawSectionTitle(doc, 'Registro Detalhado de Riscos');
+      if (sorted.length === 0) {
         doc.text('Nenhum risco cadastrado para esta empresa.');
       } else {
         this.drawPdfTable(
           doc,
-          ['Título', 'Categoria', 'Probabilidade', 'Impacto', 'Nível', 'Tratamento', 'Responsável', 'Prazo'],
-          risks.map((r) => [
+          ['#', 'Título', 'Categoria', 'Probabilidade', 'Impacto', 'Nível', 'Tratamento', 'Responsável', 'Prazo'],
+          sorted.map((r, i) => [
+            String(i + 1),
             r.title,
             r.category,
             r.probability,
@@ -599,10 +643,250 @@ export class DocumentsService {
             r.responsible?.name ?? 'N/A',
             this.fmtDate(r.reviewDate),
           ]),
-          [3, 2, 2, 2, 1.5, 2.5, 2, 1.5],
+          [0.5, 2.5, 1.5, 1.5, 1.5, 1.2, 2, 1.8, 1.2],
+        );
+      }
+
+      // ── Seção de controles ───────────────────────────────────────────────
+      doc.addPage();
+      this.drawSectionTitle(doc, 'Controles por Risco');
+      if (risksWithControls.length === 0) {
+        doc.text('Nenhum controle cadastrado para os riscos desta empresa.');
+      } else {
+        risksWithControls.forEach((risk) => {
+          if (doc.y + 80 > doc.page.height - 70) doc.addPage();
+          doc.font('Helvetica-Bold').fontSize(11).fillColor(CORP_BLUE)
+             .text(`▸ ${risk.title}  [${risk.riskLevel}]`);
+          doc.moveDown(0.2);
+          if (risk.existingControls) {
+            doc.font('Helvetica-Bold').fontSize(10).fillColor(TEXT_COLOR)
+               .text('Controles Existentes:');
+            doc.font('Helvetica').fontSize(10).text(risk.existingControls);
+            doc.moveDown(0.2);
+          }
+          if (risk.proposedControls) {
+            doc.font('Helvetica-Bold').fontSize(10).fillColor(TEXT_COLOR)
+               .text('Controles Propostos:');
+            doc.font('Helvetica').fontSize(10).text(risk.proposedControls);
+            doc.moveDown(0.2);
+          }
+          doc.moveDown(0.4);
+        });
+      }
+
+      // ── Indicadores residuais ────────────────────────────────────────────
+      if (residualRisks.length > 0) {
+        doc.addPage();
+        this.drawSectionTitle(doc, 'Indicadores de Risco Residual');
+        this.drawPdfTable(
+          doc,
+          ['Título', 'Score Inerente', 'Score Residual', 'Nível Residual', 'Prob. Residual', 'Impacto Residual'],
+          residualRisks.map((r) => [
+            r.title,
+            r.inherentScore != null ? String(r.inherentScore) : String(r.riskScore),
+            String(r.residualScore),
+            r.residualLevel ?? 'N/A',
+            r.residualProbability ?? 'N/A',
+            r.residualImpact ?? 'N/A',
+          ]),
+          [3, 1.5, 1.5, 1.5, 1.5, 1.5],
         );
       }
     });
+  }
+
+  async generateRiskReportExcel(companyId: number, user: JwtPayload): Promise<Buffer> {
+    await this.fetchCompanyForUser(companyId, user);
+
+    const risks: any[] = await this.prisma.risk.findMany({
+      where: { companyId },
+      include: {
+        responsible: true,
+        assessment: { include: { company: true } },
+      },
+      orderBy: { riskScore: 'desc' as const },
+    });
+
+    const sorted: any[] = [...risks].sort(
+      (a, b) => this.levelOrder(String(a.riskLevel)) - this.levelOrder(String(b.riskLevel)),
+    );
+
+    const allStatuses = ['IDENTIFICADO', 'EM_TRATAMENTO', 'MITIGADO', 'ACEITO', 'TRANSFERIDO'];
+    const uniqueLevels: string[] = [...new Set<string>(risks.map((r) => String(r.riskLevel)))].sort(
+      (a, b) => this.levelOrder(a) - this.levelOrder(b),
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'ASCEND';
+    workbook.created = new Date();
+
+    const HEADER_FILL = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF1E3A5F' } };
+    const HEADER_FONT = { color: { argb: 'FFFFFFFF' }, bold: true };
+    const STRIPE_FILL = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFEEF3FB' } };
+
+    const styleHeader = (sheet: ExcelJS.Worksheet) => {
+      const row = sheet.getRow(1);
+      row.height = 22;
+      row.eachCell((cell) => {
+        cell.fill = HEADER_FILL;
+        cell.font = HEADER_FONT;
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+    };
+
+    const styleDataRow = (row: ExcelJS.Row, idx: number) => {
+      if (idx % 2 !== 0) row.eachCell((cell) => { cell.fill = STRIPE_FILL; });
+      row.eachCell((cell) => { cell.alignment = { vertical: 'middle', wrapText: true }; });
+    };
+
+    const colorLevel = (row: ExcelJS.Row, colKey: string, level: string) => {
+      row.getCell(colKey).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: this.levelArgb(level) },
+      };
+    };
+
+    // ── Aba 1: Resumo ────────────────────────────────────────────────────
+    const summarySheet = workbook.addWorksheet('Resumo');
+    summarySheet.columns = [
+      { header: 'Nível', key: 'level', width: 16 },
+      ...allStatuses.map((s) => ({ header: s.replace('_', ' '), key: s, width: 18 })),
+      { header: 'TOTAL', key: 'TOTAL', width: 10 },
+    ];
+    styleHeader(summarySheet);
+
+    uniqueLevels.forEach((level, idx) => {
+      const rowData: Record<string, string | number> = { level };
+      let total = 0;
+      allStatuses.forEach((status) => {
+        const count = risks.filter((r) => r.riskLevel === level && r.status === status).length;
+        rowData[status] = count;
+        total += count;
+      });
+      rowData.TOTAL = total;
+      const row = summarySheet.addRow(rowData);
+      styleDataRow(row, idx);
+      colorLevel(row, 'level', level);
+    });
+
+    const totalRowData: Record<string, string | number> = { level: 'TOTAL' };
+    allStatuses.forEach((s) => { totalRowData[s] = risks.filter((r) => r.status === s).length; });
+    totalRowData.TOTAL = risks.length;
+    const totalRow = summarySheet.addRow(totalRowData);
+    totalRow.eachCell((cell) => { cell.font = { bold: true }; });
+
+    // ── Aba 2: Registro de Riscos ────────────────────────────────────────
+    const registrySheet = workbook.addWorksheet('Registro de Riscos');
+    registrySheet.columns = [
+      { header: 'ID', key: 'id', width: 8 },
+      { header: 'Título', key: 'title', width: 30 },
+      { header: 'Descrição', key: 'description', width: 38 },
+      { header: 'Categoria', key: 'category', width: 18 },
+      { header: 'Framework', key: 'frameworkRef', width: 14 },
+      { header: 'Probabilidade', key: 'probability', width: 16 },
+      { header: 'Impacto', key: 'impact', width: 14 },
+      { header: 'Score', key: 'riskScore', width: 9 },
+      { header: 'Nível', key: 'riskLevel', width: 12 },
+      { header: 'Status', key: 'status', width: 18 },
+      { header: 'Tratamento', key: 'treatment', width: 30 },
+      { header: 'Ativo', key: 'assetName', width: 20 },
+      { header: 'Ameaça', key: 'threat', width: 24 },
+      { header: 'Vulnerabilidade', key: 'vulnerability', width: 24 },
+      { header: 'Prob. Inerente', key: 'inherentProbability', width: 16 },
+      { header: 'Impacto Inerente', key: 'inherentImpact', width: 16 },
+      { header: 'Score Inerente', key: 'inherentScore', width: 14 },
+      { header: 'Controles Existentes', key: 'existingControls', width: 34 },
+      { header: 'Controles Propostos', key: 'proposedControls', width: 34 },
+      { header: 'Prob. Residual', key: 'residualProbability', width: 16 },
+      { header: 'Impacto Residual', key: 'residualImpact', width: 16 },
+      { header: 'Score Residual', key: 'residualScore', width: 14 },
+      { header: 'Nível Residual', key: 'residualLevel', width: 14 },
+      { header: 'Responsável', key: 'responsible', width: 22 },
+      { header: 'Data Revisão', key: 'reviewDate', width: 14 },
+      { header: 'Fechado Em', key: 'closedAt', width: 14 },
+      { header: 'Criado Em', key: 'createdAt', width: 14 },
+    ];
+    styleHeader(registrySheet);
+
+    sorted.forEach((r, idx) => {
+      const row = registrySheet.addRow({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        category: r.category,
+        frameworkRef: r.frameworkRef ?? '',
+        probability: r.probability,
+        impact: r.impact,
+        riskScore: r.riskScore,
+        riskLevel: r.riskLevel,
+        status: r.status,
+        treatment: r.treatment ?? '',
+        assetName: r.assetName ?? '',
+        threat: r.threat ?? '',
+        vulnerability: r.vulnerability ?? '',
+        inherentProbability: r.inherentProbability ?? '',
+        inherentImpact: r.inherentImpact ?? '',
+        inherentScore: r.inherentScore ?? '',
+        existingControls: r.existingControls ?? '',
+        proposedControls: r.proposedControls ?? '',
+        residualProbability: r.residualProbability ?? '',
+        residualImpact: r.residualImpact ?? '',
+        residualScore: r.residualScore ?? '',
+        residualLevel: r.residualLevel ?? '',
+        responsible: r.responsible?.name ?? '',
+        reviewDate: r.reviewDate ? this.fmtDate(r.reviewDate) : '',
+        closedAt: r.closedAt ? this.fmtDate(r.closedAt) : '',
+        createdAt: this.fmtDate(r.createdAt),
+      });
+      styleDataRow(row, idx);
+      colorLevel(row, 'riskLevel', r.riskLevel);
+    });
+
+    // ── Aba 3: Plano de Tratamento ───────────────────────────────────────
+    const treatmentSheet = workbook.addWorksheet('Plano de Tratamento');
+    treatmentSheet.columns = [
+      { header: 'ID', key: 'id', width: 8 },
+      { header: 'Título', key: 'title', width: 30 },
+      { header: 'Nível', key: 'riskLevel', width: 12 },
+      { header: 'Tratamento', key: 'treatment', width: 34 },
+      { header: 'Controles Existentes', key: 'existingControls', width: 38 },
+      { header: 'Controles Propostos', key: 'proposedControls', width: 38 },
+      { header: 'Prob. Residual', key: 'residualProbability', width: 16 },
+      { header: 'Impacto Residual', key: 'residualImpact', width: 16 },
+      { header: 'Score Residual', key: 'residualScore', width: 14 },
+      { header: 'Nível Residual', key: 'residualLevel', width: 14 },
+      { header: 'Responsável', key: 'responsible', width: 22 },
+      { header: 'Data Revisão', key: 'reviewDate', width: 14 },
+    ];
+    styleHeader(treatmentSheet);
+
+    const treatmentRisks = sorted.filter((r) => r.status === 'EM_TRATAMENTO');
+    if (treatmentRisks.length === 0) {
+      treatmentSheet.addRow(['Nenhum risco em tratamento cadastrado.']);
+    } else {
+      treatmentRisks.forEach((r, idx) => {
+        const row = treatmentSheet.addRow({
+          id: r.id,
+          title: r.title,
+          riskLevel: r.riskLevel,
+          treatment: r.treatment ?? '',
+          existingControls: r.existingControls ?? '',
+          proposedControls: r.proposedControls ?? '',
+          residualProbability: r.residualProbability ?? '',
+          residualImpact: r.residualImpact ?? '',
+          residualScore: r.residualScore ?? '',
+          residualLevel: r.residualLevel ?? '',
+          responsible: r.responsible?.name ?? '',
+          reviewDate: r.reviewDate ? this.fmtDate(r.reviewDate) : '',
+        });
+        styleDataRow(row, idx);
+        colorLevel(row, 'riskLevel', r.riskLevel);
+      });
+    }
+
+    const data = await workbook.xlsx.writeBuffer();
+    return Buffer.from(data instanceof ArrayBuffer ? new Uint8Array(data) : data);
   }
 
   async generateActionPlanPdf(companyId: number, user: JwtPayload): Promise<Buffer> {
