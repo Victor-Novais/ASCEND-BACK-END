@@ -25,6 +25,18 @@ export class PdtiService {
         strategicGoals: dto.strategicGoals,
         summary: dto.summary,
         generatedBy: currentUser.role,
+        values: dto.values,
+        legalRequirements: dto.legalRequirements,
+        currentScenario: dto.currentScenario,
+        desiredScenario: dto.desiredScenario,
+        period: dto.period,
+        responsible: dto.responsible,
+        swotStrengths: dto.swotStrengths,
+        swotWeaknesses: dto.swotWeaknesses,
+        swotOpportunities: dto.swotOpportunities,
+        swotThreats: dto.swotThreats,
+        approvedAt: dto.approvedAt ? new Date(dto.approvedAt) : undefined,
+        approvedBy: dto.approvedBy,
       },
       include: this.defaultInclude(),
     });
@@ -136,10 +148,16 @@ export class PdtiService {
       }),
     ]);
 
+    const strengths = report ? this.extractStrings(report.strengths) : [];
     const weaknesses = report ? this.extractStrings(report.weaknesses) : [];
     const recommendations = report ? this.extractStrings(report.recommendations) : [];
     const totalScore = report ? Number(report.totalScore) : Number(assessment.totalScore ?? 0);
     const maturityLevel = report?.maturityLevel ?? assessment.maturityLevel ?? 'ARTESANAL';
+
+    const criticalRisks = risks
+      .filter((r) => r.riskLevel === 'CRITICO' || r.riskLevel === 'ALTO')
+      .slice(0, 5)
+      .map((r) => r.title);
 
     const objectiveSeeds = this.buildObjectiveSeeds(weaknesses, risks, actionPlans);
     const year = new Date().getFullYear();
@@ -195,6 +213,15 @@ export class PdtiService {
             .filter(Boolean)
             .join(' • '),
           generatedBy: currentUser.role,
+          currentScenario: `Nível de maturidade atual: ${maturityLevel}. Pontuação: ${totalScore.toFixed(2)}/100. ${weaknesses.slice(0, 2).join(' ')}`.trim(),
+          desiredScenario: recommendations.length > 0
+            ? recommendations.slice(0, 3).join(' ')
+            : `Evoluir para o próximo nível de maturidade acima de ${maturityLevel}.`,
+          period: `${year}-${year + 1}`,
+          swotStrengths: strengths.length > 0 ? strengths.join(' | ') : undefined,
+          swotWeaknesses: weaknesses.length > 0 ? weaknesses.join(' | ') : undefined,
+          swotOpportunities: recommendations.length > 0 ? recommendations.join(' | ') : undefined,
+          swotThreats: criticalRisks.length > 0 ? criticalRisks.join(' | ') : undefined,
         },
       });
 
@@ -387,6 +414,18 @@ export class PdtiService {
       strategicGoals: pdti.strategicGoals,
       summary: pdti.summary,
       generatedBy: pdti.generatedBy,
+      values: pdti.values,
+      legalRequirements: pdti.legalRequirements,
+      currentScenario: pdti.currentScenario,
+      desiredScenario: pdti.desiredScenario,
+      period: pdti.period,
+      responsible: pdti.responsible,
+      swotStrengths: pdti.swotStrengths,
+      swotWeaknesses: pdti.swotWeaknesses,
+      swotOpportunities: pdti.swotOpportunities,
+      swotThreats: pdti.swotThreats,
+      approvedAt: pdti.approvedAt,
+      approvedBy: pdti.approvedBy,
       createdAt: pdti.createdAt,
       updatedAt: pdti.updatedAt,
       company: pdti.company,

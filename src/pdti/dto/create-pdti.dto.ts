@@ -1,15 +1,15 @@
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreatePdtiDto {
   @IsInt()
-  companyId: number;
+  companyId!: number;
 
   @IsOptional()
   @IsInt()
   assessmentId?: number;
 
   @IsString()
-  title: string;
+  title!: string;
 
   @IsOptional()
   @IsInt()
@@ -34,4 +34,52 @@ export class CreatePdtiDto {
   @IsOptional()
   @IsString()
   summary?: string;
+
+  @IsOptional()
+  @IsString()
+  values?: string;
+
+  @IsOptional()
+  @IsString()
+  legalRequirements?: string;
+
+  @IsOptional()
+  @IsString()
+  currentScenario?: string;
+
+  @IsOptional()
+  @IsString()
+  desiredScenario?: string;
+
+  @IsOptional()
+  @IsString()
+  period?: string;
+
+  @IsOptional()
+  @IsString()
+  responsible?: string;
+
+  @IsOptional()
+  @IsString()
+  swotStrengths?: string;
+
+  @IsOptional()
+  @IsString()
+  swotWeaknesses?: string;
+
+  @IsOptional()
+  @IsString()
+  swotOpportunities?: string;
+
+  @IsOptional()
+  @IsString()
+  swotThreats?: string;
+
+  @IsOptional()
+  @IsDateString()
+  approvedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  approvedBy?: string;
 }

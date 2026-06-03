@@ -371,20 +371,32 @@ model ActionPlan {
 }
 
 model PDTI {
-  id             Int      @id @default(autoincrement())
-  companyId      Int
-  assessmentId   Int?
-  createdById    String?  @db.Uuid
-  title          String
-  year           Int?
-  status         String   @default("RASCUNHO")
-  vision         String?
-  mission        String?
-  strategicGoals String?
-  summary        String?
-  generatedBy    String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  Int       @id @default(autoincrement())
+  companyId           Int
+  assessmentId        Int?
+  createdById         String?   @db.Uuid
+  title               String
+  year                Int?
+  status              String    @default("RASCUNHO")
+  vision              String?
+  mission             String?
+  strategicGoals      String?
+  summary             String?
+  generatedBy         String?
+  values              String?
+  legalRequirements   String?
+  currentScenario     String?
+  desiredScenario     String?
+  period              String?
+  responsible         String?
+  swotStrengths       String?
+  swotWeaknesses      String?
+  swotOpportunities   String?
+  swotThreats         String?
+  approvedAt          DateTime?
+  approvedBy          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assessment Assessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)

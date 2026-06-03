@@ -1,31 +1,4 @@
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
+import { CreatePdtiDto } from './create-pdti.dto';
 
-export class UpdatePdtiDto {
-  @IsOptional()
-  @IsString()
-  title?: string;
-
-  @IsOptional()
-  @IsInt()
-  year?: number;
-
-  @IsOptional()
-  @IsString()
-  status?: string;
-
-  @IsOptional()
-  @IsString()
-  vision?: string;
-
-  @IsOptional()
-  @IsString()
-  mission?: string;
-
-  @IsOptional()
-  @IsString()
-  strategicGoals?: string;
-
-  @IsOptional()
-  @IsString()
-  summary?: string;
-}
+export class UpdatePdtiDto extends PartialType(CreatePdtiDto) {}
