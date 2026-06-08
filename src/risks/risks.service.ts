@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
+  QuestionCategory,
   RiskImpact,
   RiskProbability,
   RiskStatus,
@@ -8,6 +9,9 @@ import {
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildStrengthsAndWeaknesses } from '../report/rules/recommendation.rules';
+import { ScoreEngineResult } from '../score/score.types';
+import { computeResponseScore } from '../assessments/utils/response-scoring';
 import { CreateRiskDto } from './dto/create-risk.dto';
 import { FilterRiskDto } from './dto/filter-risk.dto';
 import { UpdateRiskDto } from './dto/update-risk.dto';
@@ -21,6 +25,8 @@ type ReportPayloadLike = {
 
 @Injectable()
 export class RisksService {
+  private readonly logger = new Logger(RisksService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private riskTenantFilter(currentUser?: JwtPayload): Prisma.RiskWhereInput {
@@ -188,14 +194,6 @@ export class RisksService {
   }
 
   async generateFromAssessment(assessmentId: number, currentUser?: JwtPayload) {
-    const report = await this.prisma.report.findFirst({
-      where: { assessmentId },
-    });
-
-    if (!report) {
-      throw new NotFoundException(`Report for assessment '${assessmentId}' not found`);
-    }
-
     const assessmentWhere: Prisma.AssessmentWhereInput = currentUser && !isAdmin({ id: currentUser.sub, role: currentUser.role })
       ? {
           id: assessmentId,
@@ -212,9 +210,30 @@ export class RisksService {
       throw new NotFoundException(`Assessment with id '${assessmentId}' not found`);
     }
 
-    const payload = this.extractReportPayload(report);
-    const weaknesses = this.extractWeaknessStrings(payload.weaknesses);
-    const categoryScores = this.extractCategoryScores(payload.categoryScores);
+    const report = await this.prisma.report.findFirst({
+      where: { assessmentId },
+    });
+
+    let weaknesses: string[];
+    let categoryScores: Record<string, number>;
+
+    if (report) {
+      const payload = this.extractReportPayload(report);
+      weaknesses = this.extractWeaknessStrings(payload.weaknesses);
+      categoryScores = this.extractCategoryScores(payload.categoryScores);
+    } else {
+      const extracted = await this.extractWeaknessesFromAssessmentResponses(assessmentId);
+      weaknesses = extracted.weaknesses;
+      categoryScores = extracted.categoryScores;
+
+      if (weaknesses.length === 0) {
+        this.logger.log(
+          `No responses found for assessment '${assessmentId}'; returning empty risk list`,
+        );
+        return [];
+      }
+    }
+
     const impact = (categoryScores['SEGURANCA'] ?? 100) < 50 ? RiskImpact.ALTO : RiskImpact.MEDIO;
 
     const created = await Promise.all(
@@ -364,24 +383,27 @@ export class RisksService {
       return residualScore >= 15;
     }).length;
 
+    const porNivel = {
+      CRITICO: porNivelRows.find((item) => item.riskLevel === 'CRITICO')?._count.riskLevel ?? 0,
+      ALTO: porNivelRows.find((item) => item.riskLevel === 'ALTO')?._count.riskLevel ?? 0,
+      MEDIO: porNivelRows.find((item) => item.riskLevel === 'MEDIO')?._count.riskLevel ?? 0,
+      BAIXO: porNivelRows.find((item) => item.riskLevel === 'BAIXO')?._count.riskLevel ?? 0,
+    };
+    const porStatus = {
+      IDENTIFICADO:
+        porStatusRows.find((item) => item.status === RiskStatus.IDENTIFICADO)?._count.status ?? 0,
+      EM_TRATAMENTO:
+        porStatusRows.find((item) => item.status === RiskStatus.EM_TRATAMENTO)?._count.status ?? 0,
+      MITIGADO: porStatusRows.find((item) => item.status === RiskStatus.MITIGADO)?._count.status ?? 0,
+      ACEITO: porStatusRows.find((item) => item.status === RiskStatus.ACEITO)?._count.status ?? 0,
+      TRANSFERIDO:
+        porStatusRows.find((item) => item.status === RiskStatus.TRANSFERIDO)?._count.status ?? 0,
+    };
+
     return {
       total,
-      porNivel: {
-        CRITICO: porNivelRows.find((item) => item.riskLevel === 'CRITICO')?._count.riskLevel ?? 0,
-        ALTO: porNivelRows.find((item) => item.riskLevel === 'ALTO')?._count.riskLevel ?? 0,
-        MEDIO: porNivelRows.find((item) => item.riskLevel === 'MEDIO')?._count.riskLevel ?? 0,
-        BAIXO: porNivelRows.find((item) => item.riskLevel === 'BAIXO')?._count.riskLevel ?? 0,
-      },
-      porStatus: {
-        IDENTIFICADO:
-          porStatusRows.find((item) => item.status === RiskStatus.IDENTIFICADO)?._count.status ?? 0,
-        EM_TRATAMENTO:
-          porStatusRows.find((item) => item.status === RiskStatus.EM_TRATAMENTO)?._count.status ?? 0,
-        MITIGADO: porStatusRows.find((item) => item.status === RiskStatus.MITIGADO)?._count.status ?? 0,
-        ACEITO: porStatusRows.find((item) => item.status === RiskStatus.ACEITO)?._count.status ?? 0,
-        TRANSFERIDO:
-          porStatusRows.find((item) => item.status === RiskStatus.TRANSFERIDO)?._count.status ?? 0,
-      },
+      porNivel,
+      porStatus,
       porCategoria: {
         GOVERNANCA:
           porCategoriaRows.find((item) => item.category === 'GOVERNANCA')?._count.category ?? 0,
@@ -393,6 +415,10 @@ export class RisksService {
           porCategoriaRows.find((item) => item.category === 'INFRAESTRUTURA')?._count.category ?? 0,
         CULTURA: porCategoriaRows.find((item) => item.category === 'CULTURA')?._count.category ?? 0,
       },
+      critical: porNivel.CRITICO ?? 0,
+      high: porNivel.ALTO ?? 0,
+      inTreatment: porStatus.EM_TRATAMENTO ?? 0,
+      mitigated: porStatus.MITIGADO ?? 0,
       inherentCritical,
       residualCritical,
       riskReduction: reductionAverage,
@@ -477,6 +503,185 @@ export class RisksService {
   } {
     const { score, riskLevel } = this.calculateRiskScore(probability, impact);
     return { riskScore: score, riskLevel };
+  }
+
+  private async extractWeaknessesFromAssessmentResponses(assessmentId: number): Promise<{
+    weaknesses: string[];
+    categoryScores: Record<string, number>;
+  }> {
+    const responses = await this.prisma.assessmentResponse.findMany({
+      where: { assessmentId },
+      include: {
+        question: {
+          select: {
+            id: true,
+            category: true,
+            responseType: true,
+            weight: true,
+          },
+        },
+        assessmentQuestion: {
+          select: {
+            id: true,
+            category: true,
+            responseType: true,
+            weight: true,
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    const categoryWeightedScores = this.emptyCategoryAccumulator();
+    const categoryWeights = this.emptyCategoryAccumulator();
+    const categoryQuestionCounts = this.emptyCategoryAccumulator();
+
+    if (responses.length > 0) {
+      const latestByLegacyQuestion = new Map<number, (typeof responses)[number]>();
+      const scoresByTemplateQuestion = new Map<number, number[]>();
+
+      for (const response of responses) {
+        if (response.questionId != null && response.question != null) {
+          const previous = latestByLegacyQuestion.get(response.questionId);
+          if (!previous || response.id > previous.id) {
+            latestByLegacyQuestion.set(response.questionId, response);
+          }
+        } else if (response.assessmentQuestionId != null && response.assessmentQuestion != null) {
+          const list = scoresByTemplateQuestion.get(response.assessmentQuestionId) ?? [];
+          list.push(Number(response.score));
+          scoresByTemplateQuestion.set(response.assessmentQuestionId, list);
+        }
+      }
+
+      for (const response of latestByLegacyQuestion.values()) {
+        const question = response.question!;
+        const { score } = computeResponseScore(question.responseType, response.responseValue);
+        const weight = Number(question.weight);
+        const weightedQuestionScore = (score / 100) * weight;
+
+        categoryWeightedScores[question.category] += weightedQuestionScore;
+        categoryWeights[question.category] += weight;
+        categoryQuestionCounts[question.category] += 1;
+      }
+
+      for (const [templateQuestionId, scores] of scoresByTemplateQuestion) {
+        const sample = responses.find(
+          (response) =>
+            response.assessmentQuestionId === templateQuestionId && response.assessmentQuestion,
+        );
+        const templateQuestion = sample?.assessmentQuestion;
+        if (!templateQuestion?.category || scores.length === 0) {
+          continue;
+        }
+
+        const avgScore = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+        const weight = Number(templateQuestion.weight);
+        const weightedQuestionScore = (avgScore / 100) * weight;
+
+        categoryWeightedScores[templateQuestion.category] += weightedQuestionScore;
+        categoryWeights[templateQuestion.category] += weight;
+        categoryQuestionCounts[templateQuestion.category] += 1;
+      }
+    } else {
+      const answers = await this.prisma.answer.findMany({
+        where: { assessmentId },
+        include: {
+          assessmentQuestion: {
+            include: { options: true },
+          },
+          selectedOption: true,
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+
+      const latestByQuestion = new Map<number, (typeof answers)[number]>();
+      for (const answer of answers) {
+        if (!latestByQuestion.has(answer.assessmentQuestionId)) {
+          latestByQuestion.set(answer.assessmentQuestionId, answer);
+        }
+      }
+
+      for (const answer of latestByQuestion.values()) {
+        const question = answer.assessmentQuestion;
+        const category = question.category ?? QuestionCategory.GOVERNANCA;
+        const optionWeights = question.options.map((option) => option.weight);
+        const maxWeight =
+          optionWeights.length > 0
+            ? Math.max(...optionWeights)
+            : answer.selectedOption.weight;
+        if (!Number.isFinite(maxWeight) || maxWeight <= 0) {
+          continue;
+        }
+
+        const selectedWeight = answer.selectedOption.weight;
+        categoryWeightedScores[category] += selectedWeight;
+        categoryWeights[category] += maxWeight;
+        categoryQuestionCounts[category] += 1;
+      }
+    }
+
+    const hasScoredCategories = Object.values(QuestionCategory).some(
+      (category) => categoryQuestionCounts[category] > 0,
+    );
+    if (!hasScoredCategories) {
+      return { weaknesses: [], categoryScores: {} };
+    }
+
+    const categoryScores = this.emptyCategoryAccumulator();
+    for (const category of Object.values(QuestionCategory) as QuestionCategory[]) {
+      if (categoryQuestionCounts[category] === 0 || categoryWeights[category] <= 0) {
+        categoryScores[category] = 0;
+        continue;
+      }
+
+      categoryScores[category] = this.round2(
+        (categoryWeightedScores[category] / categoryWeights[category]) * 100,
+      );
+    }
+
+    const totalScore = this.round2(
+      Object.values(categoryScores).reduce((acc, value) => acc + value, 0) /
+        Object.values(QuestionCategory).length,
+    );
+
+    const scoreForRecommendations: ScoreEngineResult = {
+      totalScore,
+      totalWeight: this.round2(
+        Object.values(categoryWeights).reduce((acc, value) => acc + value, 0),
+      ),
+      categoryScores,
+      categoryWeights: this.roundCategoryWeights(categoryWeights),
+      items: [],
+    };
+
+    const { weaknesses } = buildStrengthsAndWeaknesses(scoreForRecommendations);
+
+    return {
+      weaknesses: this.extractWeaknessStrings(weaknesses),
+      categoryScores,
+    };
+  }
+
+  private emptyCategoryAccumulator(): Record<QuestionCategory, number> {
+    const accumulator = {} as Record<QuestionCategory, number>;
+    for (const category of Object.values(QuestionCategory) as QuestionCategory[]) {
+      accumulator[category] = 0;
+    }
+    return accumulator;
+  }
+
+  private roundCategoryWeights(
+    input: Record<QuestionCategory, number>,
+  ): Record<QuestionCategory, number> {
+    const output = {} as Record<QuestionCategory, number>;
+    for (const category of Object.values(QuestionCategory) as QuestionCategory[]) {
+      output[category] = this.round2(input[category]);
+    }
+    return output;
+  }
+
+  private round2(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 
   private extractReportPayload(report: {
