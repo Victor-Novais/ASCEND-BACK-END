@@ -195,6 +195,47 @@ describe('RisksService', () => {
     expect(result).toHaveLength(1);
   });
 
+  it('returns current and residual risk matrix comparison', async () => {
+    prisma.risk.findMany.mockResolvedValue([
+      {
+        probability: RiskProbability.ALTA,
+        impact: RiskImpact.ALTO,
+        residualProbability: RiskProbability.MEDIA,
+        residualImpact: RiskImpact.MEDIO,
+      },
+      {
+        probability: RiskProbability.MEDIA,
+        impact: RiskImpact.MEDIO,
+        residualProbability: null,
+        residualImpact: null,
+      },
+    ]);
+
+    const result = await service.getRiskMatrixComparison(5);
+
+    expect(prisma.risk.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ companyId: 5 }),
+        select: {
+          probability: true,
+          impact: true,
+          residualProbability: true,
+          residualImpact: true,
+        },
+      }),
+    );
+
+    const currentCell = result.current.find((cell) => cell.probability === 4 && cell.impact === 4);
+    const residualCell = result.residual.find((cell) => cell.probability === 3 && cell.impact === 3);
+    const fallbackCell = result.residual.find((cell) => cell.probability === 3 && cell.impact === 3);
+
+    expect(result.current).toHaveLength(25);
+    expect(result.residual).toHaveLength(25);
+    expect(currentCell?.count).toBe(1);
+    expect(residualCell?.count).toBe(2);
+    expect(fallbackCell?.count).toBe(2);
+  });
+
   it('returns aggregated stats with expanded TIC metrics', async () => {
     prisma.risk.count.mockResolvedValue(4);
     prisma.risk.groupBy

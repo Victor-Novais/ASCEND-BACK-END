@@ -18,6 +18,12 @@ import { UpdateRiskDto } from './dto/update-risk.dto';
 
 type RiskLevel = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
 
+export type RiskMatrixCell = {
+  probability: number;
+  impact: number;
+  count: number;
+};
+
 type ReportPayloadLike = {
   weaknesses?: unknown;
   categoryScores?: unknown;
@@ -270,38 +276,39 @@ export class RisksService {
 
   async getRiskMatrix(companyId?: number, currentUser?: JwtPayload) {
     const risks = await this.prisma.risk.findMany({
-      where: {
-        ...(companyId !== undefined ? { companyId } : {}),
-        ...(this.riskTenantFilter(currentUser) as Prisma.RiskWhereInput),
-        status: {
-          notIn: [RiskStatus.MITIGADO, RiskStatus.ACEITO, RiskStatus.TRANSFERIDO],
-        },
-      },
+      where: this.riskMatrixWhere(companyId, currentUser),
       select: {
         probability: true,
         impact: true,
       },
     });
 
-    const matrix = Array.from({ length: 5 }, (_, probabilityIndex) =>
-      Array.from({ length: 5 }, (_, impactIndex) => ({
-        probability: probabilityIndex + 1,
-        impact: impactIndex + 1,
-        count: 0,
+    return this.buildRiskMatrix(risks);
+  }
+
+  async getRiskMatrixComparison(
+    companyId?: number,
+    currentUser?: JwtPayload,
+  ): Promise<{ current: RiskMatrixCell[]; residual: RiskMatrixCell[] }> {
+    const risks = await this.prisma.risk.findMany({
+      where: this.riskMatrixWhere(companyId, currentUser),
+      select: {
+        probability: true,
+        impact: true,
+        residualProbability: true,
+        residualImpact: true,
+      },
+    });
+
+    const current = this.buildRiskMatrix(risks);
+    const residual = this.buildRiskMatrix(
+      risks.map((risk) => ({
+        probability: risk.residualProbability ?? risk.probability,
+        impact: risk.residualImpact ?? risk.impact,
       })),
-    ).flat();
+    );
 
-    for (const risk of risks) {
-      const probability = this.enumToWeight(risk.probability);
-      const impact = this.enumToWeight(risk.impact);
-      const cell = matrix.find((item) => item.probability === probability && item.impact === impact);
-
-      if (cell) {
-        cell.count += 1;
-      }
-    }
-
-    return matrix;
+    return { current, residual };
   }
 
   async getStats(companyId?: number, currentUser?: JwtPayload) {
@@ -750,6 +757,40 @@ export class RisksService {
     }
 
     return 'PROCESSOS';
+  }
+
+  private riskMatrixWhere(companyId?: number, currentUser?: JwtPayload): Prisma.RiskWhereInput {
+    return {
+      ...(companyId !== undefined ? { companyId } : {}),
+      ...(this.riskTenantFilter(currentUser) as Prisma.RiskWhereInput),
+      status: {
+        notIn: [RiskStatus.MITIGADO, RiskStatus.ACEITO, RiskStatus.TRANSFERIDO],
+      },
+    };
+  }
+
+  private buildRiskMatrix(
+    risks: Array<{ probability: RiskProbability; impact: RiskImpact }>,
+  ): RiskMatrixCell[] {
+    const matrix = Array.from({ length: 5 }, (_, probabilityIndex) =>
+      Array.from({ length: 5 }, (_, impactIndex) => ({
+        probability: probabilityIndex + 1,
+        impact: impactIndex + 1,
+        count: 0,
+      })),
+    ).flat();
+
+    for (const risk of risks) {
+      const probability = this.enumToWeight(risk.probability);
+      const impact = this.enumToWeight(risk.impact);
+      const cell = matrix.find((item) => item.probability === probability && item.impact === impact);
+
+      if (cell) {
+        cell.count += 1;
+      }
+    }
+
+    return matrix;
   }
 
   private enumToWeight(value: RiskProbability | RiskImpact): number {

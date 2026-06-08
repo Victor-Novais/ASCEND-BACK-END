@@ -53,6 +53,18 @@ export class RisksController {
     );
   }
 
+  @Get('matrix-comparison')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  getRiskMatrixComparison(
+    @CurrentUser() user: JwtPayload,
+    @Query('companyId') companyId?: string,
+  ) {
+    return this.risksService.getRiskMatrixComparison(
+      companyId != null ? Number(companyId) : undefined,
+      user,
+    );
+  }
+
   @Get('stats')
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   getStats(
