@@ -4,8 +4,12 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { isAdmin, userCompanyScope } from '../auth/user-scope.helper';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePdtiDto } from './dto/create-pdti.dto';
+import { CreatePdtiIndicatorDto } from './dto/create-pdti-indicator.dto';
+import { CreatePdtiObjectiveDto } from './dto/create-pdti-objective.dto';
 import { FilterPdtiDto } from './dto/filter-pdti.dto';
 import { UpdatePdtiDto } from './dto/update-pdti.dto';
+import { UpdatePdtiIndicatorDto } from './dto/update-pdti-indicator.dto';
+import { UpdatePdtiObjectiveDto } from './dto/update-pdti-objective.dto';
 
 @Injectable()
 export class PdtiService {
@@ -108,6 +112,119 @@ export class PdtiService {
     }
 
     return this.prisma.pDTI.delete({
+      where: { id },
+    });
+  }
+
+  async createObjective(pdtiId: number, dto: CreatePdtiObjectiveDto, currentUser: JwtPayload) {
+    await this.findOne(pdtiId, currentUser);
+
+    return this.prisma.pDTIObjective.create({
+      data: {
+        pdtiId,
+        title: dto.title,
+        description: dto.description,
+        priority: dto.priority,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      },
+    });
+  }
+
+  async updateObjective(
+    pdtiId: number,
+    id: number,
+    dto: UpdatePdtiObjectiveDto,
+    currentUser: JwtPayload,
+  ) {
+    await this.findOne(pdtiId, currentUser);
+
+    const existing = await this.prisma.pDTIObjective.findFirst({
+      where: { id, pdtiId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`PDTI objective with id '${id}' not found`);
+    }
+
+    return this.prisma.pDTIObjective.update({
+      where: { id },
+      data: {
+        ...dto,
+        dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : undefined,
+      },
+    });
+  }
+
+  async removeObjective(pdtiId: number, id: number, currentUser: JwtPayload) {
+    await this.findOne(pdtiId, currentUser);
+
+    const existing = await this.prisma.pDTIObjective.findFirst({
+      where: { id, pdtiId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`PDTI objective with id '${id}' not found`);
+    }
+
+    return this.prisma.pDTIObjective.delete({
+      where: { id },
+    });
+  }
+
+  async createIndicator(pdtiId: number, dto: CreatePdtiIndicatorDto, currentUser: JwtPayload) {
+    await this.findOne(pdtiId, currentUser);
+
+    return this.prisma.pDTIIndicator.create({
+      data: {
+        pdtiId,
+        name: dto.name,
+        unit: dto.unit,
+        baseline: dto.baseline,
+        target: dto.target,
+        currentValue: dto.currentValue,
+        frequency: dto.frequency,
+      },
+    });
+  }
+
+  async updateIndicator(
+    pdtiId: number,
+    id: number,
+    dto: UpdatePdtiIndicatorDto,
+    currentUser: JwtPayload,
+  ) {
+    await this.findOne(pdtiId, currentUser);
+
+    const existing = await this.prisma.pDTIIndicator.findFirst({
+      where: { id, pdtiId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`PDTI indicator with id '${id}' not found`);
+    }
+
+    return this.prisma.pDTIIndicator.update({
+      where: { id },
+      data: dto,
+    });
+  }
+
+  async removeIndicator(pdtiId: number, id: number, currentUser: JwtPayload) {
+    await this.findOne(pdtiId, currentUser);
+
+    const existing = await this.prisma.pDTIIndicator.findFirst({
+      where: { id, pdtiId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`PDTI indicator with id '${id}' not found`);
+    }
+
+    return this.prisma.pDTIIndicator.delete({
       where: { id },
     });
   }

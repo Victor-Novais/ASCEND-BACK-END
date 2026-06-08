@@ -17,8 +17,12 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreatePdtiDto } from './dto/create-pdti.dto';
+import { CreatePdtiIndicatorDto } from './dto/create-pdti-indicator.dto';
+import { CreatePdtiObjectiveDto } from './dto/create-pdti-objective.dto';
 import { FilterPdtiDto } from './dto/filter-pdti.dto';
 import { UpdatePdtiDto } from './dto/update-pdti.dto';
+import { UpdatePdtiIndicatorDto } from './dto/update-pdti-indicator.dto';
+import { UpdatePdtiObjectiveDto } from './dto/update-pdti-objective.dto';
 import { PdtiService } from './pdti.service';
 
 @Controller('pdti')
@@ -54,6 +58,68 @@ export class PdtiController {
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
   findAll(@Query() filters: FilterPdtiDto, @CurrentUser() user: JwtPayload) {
     return this.pdtiService.findAll(filters, user);
+  }
+
+  @Post(':pdtiId/objectives')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  createObjective(
+    @Param('pdtiId', ParseIntPipe) pdtiId: number,
+    @Body() dto: CreatePdtiObjectiveDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pdtiService.createObjective(pdtiId, dto, user);
+  }
+
+  @Patch(':pdtiId/objectives/:id')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  updateObjective(
+    @Param('pdtiId', ParseIntPipe) pdtiId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePdtiObjectiveDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pdtiService.updateObjective(pdtiId, id, dto, user);
+  }
+
+  @Delete(':pdtiId/objectives/:id')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  removeObjective(
+    @Param('pdtiId', ParseIntPipe) pdtiId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pdtiService.removeObjective(pdtiId, id, user);
+  }
+
+  @Post(':pdtiId/indicators')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  createIndicator(
+    @Param('pdtiId', ParseIntPipe) pdtiId: number,
+    @Body() dto: CreatePdtiIndicatorDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pdtiService.createIndicator(pdtiId, dto, user);
+  }
+
+  @Patch(':pdtiId/indicators/:id')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  updateIndicator(
+    @Param('pdtiId', ParseIntPipe) pdtiId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePdtiIndicatorDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pdtiService.updateIndicator(pdtiId, id, dto, user);
+  }
+
+  @Delete(':pdtiId/indicators/:id')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  removeIndicator(
+    @Param('pdtiId', ParseIntPipe) pdtiId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.pdtiService.removeIndicator(pdtiId, id, user);
   }
 
   @Get(':id/export')
