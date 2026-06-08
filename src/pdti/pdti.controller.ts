@@ -8,8 +8,11 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -23,12 +26,16 @@ import { FilterPdtiDto } from './dto/filter-pdti.dto';
 import { UpdatePdtiDto } from './dto/update-pdti.dto';
 import { UpdatePdtiIndicatorDto } from './dto/update-pdti-indicator.dto';
 import { UpdatePdtiObjectiveDto } from './dto/update-pdti-objective.dto';
+import { PdtiDocxService } from '../exports/pdti-docx.service';
 import { PdtiService } from './pdti.service';
 
 @Controller('pdti')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PdtiController {
-  constructor(private readonly pdtiService: PdtiService) {}
+  constructor(
+    private readonly pdtiService: PdtiService,
+    private readonly pdtiDocxService: PdtiDocxService,
+  ) {}
 
   @Post()
   @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
@@ -120,6 +127,22 @@ export class PdtiController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.pdtiService.removeIndicator(pdtiId, id, user);
+  }
+
+  @Get(':id/export/docx')
+  @Roles(Role.ADMIN, Role.AVALIADOR, Role.CLIENTE)
+  async exportDocx(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buffer = await this.pdtiDocxService.generatePdtiDocx(id, user);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="pdti-${id}.docx"`,
+    });
+    return new StreamableFile(buffer);
   }
 
   @Get(':id/export')
